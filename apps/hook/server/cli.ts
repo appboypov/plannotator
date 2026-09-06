@@ -276,7 +276,7 @@ export const SUBCOMMAND_HELP: Record<string, string> = {
     "  --open [N]    Reopen session #N (default 1) in the browser",
     "  --clean       Remove stale session entries",
   ].join("\n"),
-  update: ["Usage:", "  plannotator update", "", "Import the latest release into appboypov/plannotator, build and install. Conflicts create a Brian todo; inspect with make status and continue with make resume."],
+  update: ["Usage:", "  plannotator update", "", "Import the latest release into appboypov/plannotator, build and install. Conflicts create a Brian todo; inspect with make status and continue with make resume."].join("\n"),
   uninstall: [
     "Usage:",
     "  plannotator uninstall [--purge] [--yes | -y] [--dry-run]",

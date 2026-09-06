@@ -81,3 +81,8 @@ test("failed builds leave the branch and installed executable unchanged", async 
   expect((await f.run(f.repo,"rev-parse","HEAD")).stdout).toBe(before);
   expect(existsSync(f.config.installPath)).toBe(false);
 });
+
+test("the installed update command has readable help", async () => {
+  const { formatSubcommandHelp } = await import("../../apps/hook/server/cli");
+  expect(typeof formatSubcommandHelp("update")).toBe("string");
+});
