@@ -41,60 +41,60 @@ function liveRequests(db: Database): QueuedSession[] {
 export class SessionQueueService {
   constructor(private readonly dataDir: string) {}
 
-list(): QueuedSession[] {
-  const db = openQueue(this.dataDir);
-  try {
-    return db.transaction(() => liveRequests(db)).immediate();
-  } finally {
-    db.close();
-  }
-}
-
-/** Hold the slot until this CLI process exits, including result publication. */
-async wait(label: string, project: string): Promise<void> {
-  const db = openQueue(this.dataDir);
-  const id = Number(db.query(
-    "INSERT INTO requests (pid, label, project) VALUES (?, ?, ?)",
-  ).run(process.pid, label, project).lastInsertRowid);
-  const release = () => {
+  list(): QueuedSession[] {
+    const db = openQueue(this.dataDir);
     try {
-      db.query("DELETE FROM requests WHERE id = ?").run(id);
+      return db.transaction(() => liveRequests(db)).immediate();
     } finally {
       db.close();
     }
-  };
-  process.once("exit", release);
-
-  let previousPosition = -1;
-  try {
-    while (true) {
-      const { position, admitted } = db.transaction(() => {
-        const rows = liveRequests(db);
-        const index = rows.findIndex((row) => row.id === id);
-        // Older binaries have registry entries but no queue row. Leave them running.
-        const existing = listSessions().filter((session) => session.pid !== process.pid);
-        const admitted = index === 0 && existing.length === 0;
-        if (admitted) {
-          db.query("UPDATE requests SET state = 'active' WHERE id = ?").run(id);
-        }
-        const activeAhead = rows.slice(0, index).filter((row) => row.state === "active").length;
-        return { position: index + 1 - activeAhead, admitted };
-      }).immediate();
-      if (admitted) {
-        if (previousPosition !== -1) console.error(`[queue] Starting ${label} (request ${id}).`);
-        return;
-      }
-      if (position !== previousPosition) {
-        console.error(`[queue] Waiting #${position}: ${label} (request ${id}). The command will continue automatically.`);
-        previousPosition = position;
-      }
-      await Bun.sleep(POLL_INTERVAL_MS);
-    }
-  } catch (error) {
-    process.removeListener("exit", release);
-    release();
-    throw error;
   }
-}
+
+  /** Hold the slot until this CLI process exits, including result publication. */
+  async wait(label: string, project: string): Promise<void> {
+    const db = openQueue(this.dataDir);
+    const id = Number(db.query(
+      "INSERT INTO requests (pid, label, project) VALUES (?, ?, ?)",
+    ).run(process.pid, label, project).lastInsertRowid);
+    const release = () => {
+      try {
+        db.query("DELETE FROM requests WHERE id = ?").run(id);
+      } finally {
+        db.close();
+      }
+    };
+    process.once("exit", release);
+
+    let previousPosition = -1;
+    try {
+      while (true) {
+        const { position, admitted } = db.transaction(() => {
+          const rows = liveRequests(db);
+          const index = rows.findIndex((row) => row.id === id);
+          // Older binaries have registry entries but no queue row. Leave them running.
+          const existing = listSessions().filter((session) => session.pid !== process.pid);
+          const admitted = index === 0 && existing.length === 0;
+          if (admitted) {
+            db.query("UPDATE requests SET state = 'active' WHERE id = ?").run(id);
+          }
+          const activeAhead = rows.slice(0, index).filter((row) => row.state === "active").length;
+          return { position: index + 1 - activeAhead, admitted };
+        }).immediate();
+        if (admitted) {
+          if (previousPosition !== -1) console.error(`[queue] Starting ${label} (request ${id}).`);
+          return;
+        }
+        if (position !== previousPosition) {
+          console.error(`[queue] Waiting #${position}: ${label} (request ${id}). The command will continue automatically.`);
+          previousPosition = position;
+        }
+        await Bun.sleep(POLL_INTERVAL_MS);
+      }
+    } catch (error) {
+      process.removeListener("exit", release);
+      release();
+      throw error;
+    }
+  }
 
 }

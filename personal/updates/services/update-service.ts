@@ -23,7 +23,10 @@ export class UpdateService {
   async check() {
     const release = await this.releases.latest(this.config.root);
     const base = JSON.parse(readFileSync(join(this.config.root, "personal/updates/config/upstream.json"), "utf8"));
-    return { currentVersion: this.config.installedVersion, latestVersion: release.tag_name,
+    const currentVersion = this.config.installedVersion === "development"
+      ? (await this.commands.run(this.config.installPath, ["--version"], this.config.root)).stdout.replace(/^plannotator /, "")
+      : this.config.installedVersion;
+    return { currentVersion, latestVersion: release.tag_name,
       updateAvailable: release.tag_name !== base.tag, releaseUrl: release.html_url, state: this.state.read() };
   }
   private async assertCheckout() {
