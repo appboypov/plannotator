@@ -153,6 +153,7 @@ export function formatTopLevelHelp(): string {
     "  plannotator guide share --id <savedGuideId> | --guide <guide.json> --patch <diff.patch> | --snapshot <snapshot.json> [--public] [--ttl <7d>] [--json]",
     "  plannotator guide unshare <id> --token <deleteToken>",
     "  plannotator sessions",
+    "  plannotator update",
     "  plannotator uninstall [--purge] [--yes] [--dry-run]",
     "  plannotator improve-context",
     "",
@@ -275,6 +276,7 @@ export const SUBCOMMAND_HELP: Record<string, string> = {
     "  --open [N]    Reopen session #N (default 1) in the browser",
     "  --clean       Remove stale session entries",
   ].join("\n"),
+  update: ["Usage:", "  plannotator update", "", "Import the latest release into appboypov/plannotator, build and install. Conflicts create a Brian todo; inspect with make status and continue with make resume."],
   uninstall: [
     "Usage:",
     "  plannotator uninstall [--purge] [--yes | -y] [--dry-run]",

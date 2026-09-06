@@ -2849,3 +2849,5 @@ diffs-container {
 .review-comment-markdown {
   overflow-wrap: anywhere;
 }
+
+@source "../../personal/updates/components/**/*.tsx";

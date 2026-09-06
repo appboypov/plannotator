@@ -1,3 +1,4 @@
+import { handleForkUpdateRequest } from "../../personal/updates/routes";
 /**
  * Code Review Server
  *
@@ -1768,6 +1769,8 @@ export async function startReviewServer(
         idleTimeout: 0,
 
         async fetch(req, server) {
+          const forkResponse = await handleForkUpdateRequest(req);
+          if (forkResponse) return forkResponse;
           const url = new URL(req.url);
 
           // API: Get tour result

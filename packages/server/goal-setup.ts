@@ -1,3 +1,4 @@
+import { handleForkUpdateRequest } from "../../personal/updates/routes";
 /**
  * Goal Setup Server
  *
@@ -108,6 +109,8 @@ export async function startGoalSetupServer(
         idleTimeout: 0,
 
         async fetch(req) {
+          const forkResponse = await handleForkUpdateRequest(req);
+          if (forkResponse) return forkResponse;
           const url = new URL(req.url);
 
           if (

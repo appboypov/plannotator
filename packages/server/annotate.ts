@@ -1,3 +1,4 @@
+import { handleForkUpdateRequest } from "../../personal/updates/routes";
 /**
  * Annotate Server
  *
@@ -687,6 +688,8 @@ export async function startAnnotateServer(
         idleTimeout: 0,
 
         async fetch(req, server) {
+          const forkResponse = await handleForkUpdateRequest(req);
+          if (forkResponse) return forkResponse;
           const url = new URL(req.url);
 
           if (agentTerminal.matches(url.pathname)) {

@@ -1,3 +1,9 @@
+# Personal fork requirements
+
+Always load `/Users/codaveto/Work/skills/our-dev-conventions/SKILL.md` before any code exploration, planning, edits, testing or review. Read all relevant convention subjects and apply them throughout the work.
+
+Read [personal/README.md](personal/README.md) before changing custom behaviour, importing a release, building, installing, or resolving update conflicts. It owns the fork workflow and isolation rules. Commit and push only to `appboypov/plannotator`.
+
 # Plannotator
 
 A plan review UI for Claude Code that intercepts `ExitPlanMode` via hooks, letting users approve or request changes with annotated feedback. Also provides code review for git diffs and annotation of arbitrary markdown files.

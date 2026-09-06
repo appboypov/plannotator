@@ -1,3 +1,4 @@
+import { handleForkUpdateRequest } from "../../personal/updates/routes";
 /**
  * Plannotator Shared Server
  *
@@ -257,6 +258,8 @@ export async function startPlannotatorServer(
         idleTimeout: 0,
 
         async fetch(req, server) {
+          const forkResponse = await handleForkUpdateRequest(req);
+          if (forkResponse) return forkResponse;
           const url = new URL(req.url);
 
           // API: Get a specific plan version from history

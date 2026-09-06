@@ -1,3 +1,5 @@
+import { startPlannotatorServer, startReviewServer, startAnnotateServer, startGoalSetupServer, listQueuedSessions } from "../../../personal/session-queue";
+import { runForkCommand } from "../../../personal/updates/commands/fork-command";
 /**
  * Plannotator CLI for Claude Code, Droid, Codex, Gemini CLI, and Copilot CLI
  *
@@ -77,21 +79,17 @@
  */
 
 import {
-  startPlannotatorServer,
   handleServerReady,
 } from "@plannotator/server";
 import {
-  startReviewServer,
   handleReviewServerReady,
 } from "@plannotator/server/review";
 import { runGuideCli } from "@plannotator/server/guide-cli";
 import {
-  startAnnotateServer,
   handleAnnotateServerReady,
   isRemoteSession,
 } from "@plannotator/server/annotate";
 import {
-  startGoalSetupServer,
   handleGoalSetupServerReady,
 } from "@plannotator/server/goal-setup";
 import { type DiffType, detectManagedVcs, prepareLocalReviewDiff, gitRuntime } from "@plannotator/server/vcs";
@@ -477,6 +475,12 @@ if (isInteractiveNoArgInvocation(args, process.stdin.isTTY)) {
   process.exit(0);
 }
 
+if (args[0] === "update") {
+  if (args.length !== 1) { console.error("Usage: plannotator update"); process.exit(2); }
+  await runForkCommand("update");
+  process.exit(process.exitCode || 0);
+}
+
 // Ensure session cleanup on exit
 process.on("exit", () => unregisterSession());
 
@@ -638,6 +642,11 @@ if (args[0] === "sessions") {
   }
 
   const sessions = listSessions();
+  const waiting = listQueuedSessions().filter((request) => request.state === "waiting");
+  if (waiting.length) {
+    console.error("Waiting Plannotator requests:");
+    waiting.forEach((request, index) => console.error(`  #${index + 1} ${request.label} ${request.project} PID ${request.pid}`));
+  }
 
   if (sessions.length === 0) {
     console.error("No active Plannotator sessions.");
