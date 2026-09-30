@@ -1,6 +1,6 @@
 ## 1. Infra
 
-- [x] 1.1 `fork/ci-check.ts` -- run the `run` steps of job `test` in `.github/workflows/test.yml` in order with GitHub's bash flags and `CI=true`, stop at the first failure, fail clearly when the job is missing -- keeps the check equal to upstream CI
+- [x] 1.1 `fork/ci-check.ts` -- run the `run` steps of job `test` in `.github/workflows/test.yml` in order with GitHub's bash flags, stop at the first failure, fail clearly when the job is missing -- keeps the check equal to upstream CI
 - [x] 1.2 `.crabbox.yaml` -- profile `plannotator`, sync like pew-pew-lavish, preflight `bun` and `bash`, job `check` runs `bun fork/ci-check.ts` -- the one check that gates a merge
 - [x] 1.3 `.gitignore` -- add `.crabbox/` in a fork block -- runtime captures stay out of git
 - [x] 1.4 `fork/README.md` -- the fork guide: what the fork is, checkout path, remotes and archive tags, taking an upstream release, the check, fork rules -- replaces the removed `personal/README.md`
