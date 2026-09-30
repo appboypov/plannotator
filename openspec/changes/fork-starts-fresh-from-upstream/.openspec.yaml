@@ -2,11 +2,12 @@ schema: intent-driven
 created: 2026-09-30
 skip_specs: true
 build:
-  status: 'ready-for-dev'
+  status: 'in-progress'
   type: 'chore'
   ticket: '1'
   intent: '/Users/codaveto/Brainspace/intents/das/own-plannotator-at-gates/epic-plannotator-service'
   route: 'oneshot'
   route_source: 'auto'
+  baseline_revision: 'e40e5a857aa46ea52c69019092193874d39d4efd'
   context:
     - '{project-root}/adr/0003-fork-owned-code-and-checks.md'
