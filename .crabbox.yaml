@@ -1,0 +1,15 @@
+profile: plannotator
+sync:
+  delete: true
+  gitSeed: true
+  exclude:
+    - node_modules
+run:
+  preflightTools:
+    - bun
+    - bash
+jobs:
+  check:
+    shell: true
+    command: bun fork/ci-check.ts
+    stop: auto
