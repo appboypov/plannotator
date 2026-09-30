@@ -1,0 +1,20 @@
+schema: intent-driven
+
+context: |
+  plannotator: Brian's fork of backnotprop/plannotator (appboypov/plannotator). It tracks upstream releases and adds an always-on review service for Markdown documents: one link per document, Rounds, remarks and replies that outlive a session, a versioned review API with a listen socket, a public door behind ctas.de-appspecialist.nl/plannotator/, a temporary door for ngrok, and launchd supervision.
+  Bun + TypeScript monorepo (apps/*, packages/*). The CLI and server are apps/hook and packages/server; the plan page is packages/editor; checks are `bun run typecheck` and `bun test`, run through Crabbox (`.crabbox.yaml`).
+  Fork changes live in their own modules with small call sites in upstream files, so upstream releases merge cleanly. Upstream releases are taken through ~/Work/prompts/update-plannotator.md.
+  Parity reference: ~/Repos/Forks/pew-pew-lavish (docs/review-api.md, docs/invariants.md) and ~/Repos/Plugins/omp-lavish-review (adr/0001-0007).
+  Owning intent: /Users/codaveto/Brainspace/intents/das/own-plannotator-at-gates/own-plannotator-at-gates.md
+
+rules:
+  proposal:
+    - Pressure-test the intent with madspec-grilling before writing; name the owning intent record path.
+  specs:
+    - Write requirements and scenarios in Gherkin; every requirement carries at least one scenario with GIVEN, WHEN and THEN steps.
+  design:
+    - Draw the architecture with madspec-architecture where structure matters.
+  adr:
+    - Follow madspec-architecture; durable decisions are immutable files under adr/.
+  tasks:
+    - Keep every task a checkbox small enough for one session and name the verification that proves it.
