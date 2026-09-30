@@ -1,3 +1,5 @@
+> **Fork:** this checkout is `appboypov/plannotator`, a fork of upstream Plannotator. Read `fork/README.md` first: it owns the fork rules, the Crabbox check and upstream updates. Changes are OpenSpec changes in `openspec/`.
+
 # Plannotator
 
 A plan review UI for Claude Code that intercepts `ExitPlanMode` via hooks, letting users approve or request changes with annotated feedback. Also provides code review for git diffs and annotation of arbitrary markdown files.

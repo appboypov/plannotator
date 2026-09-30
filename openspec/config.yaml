@@ -3,7 +3,7 @@ schema: intent-driven
 context: |
   plannotator: Brian's fork of backnotprop/plannotator (appboypov/plannotator). It tracks upstream releases and adds an always-on review service for Markdown documents: one link per document, Rounds, remarks and replies that outlive a session, a versioned review API with a listen socket, a public door behind ctas.de-appspecialist.nl/plannotator/, a temporary door for ngrok, and launchd supervision.
   Bun + TypeScript monorepo (apps/*, packages/*). The CLI and server are apps/hook and packages/server; the plan page is packages/editor; checks are `bun run typecheck` and `bun test`, run through Crabbox (`.crabbox.yaml`).
-  Fork changes live in their own modules with small call sites in upstream files, so upstream releases merge cleanly. Upstream releases are taken through ~/Work/prompts/update-plannotator.md.
+  Fork changes live in fork-owned files with small call sites in upstream files, so upstream releases merge cleanly. fork/README.md owns the fork rules, the check and upstream updates.
   Parity reference: ~/Repos/Forks/pew-pew-lavish (docs/review-api.md, docs/invariants.md) and ~/Repos/Plugins/omp-lavish-review (adr/0001-0007).
   Owning intent: /Users/codaveto/Brainspace/intents/das/own-plannotator-at-gates/own-plannotator-at-gates.md
 
