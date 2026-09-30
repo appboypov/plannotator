@@ -19,6 +19,7 @@
 ## Implementation Notes
 
 Oneshot: about 90 lines over a script, two config files, one guide and three pointer edits. `fork/ci-check.ts` has no unit test: its only logic is running upstream's steps, and the Crabbox run of 2.1 proves it end to end.
+
 Built:
 
 - GitHub Actions was already off for the fork (`{"enabled":false}`), and Dependabot security fixes are off; no bot pull requests exist. Nothing to switch.

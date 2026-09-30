@@ -2,7 +2,7 @@ schema: intent-driven
 created: 2026-09-30
 skip_specs: true
 build:
-  status: 'in-progress'
+  status: 'in-review'
   type: 'chore'
   ticket: '1'
   intent: '/Users/codaveto/Brainspace/intents/das/own-plannotator-at-gates/epic-plannotator-service'
