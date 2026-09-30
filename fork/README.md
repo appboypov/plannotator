@@ -21,7 +21,7 @@ GitHub Actions is off for this fork. The check runs on the VPS through Crabbox:
 crabbox job run check
 ```
 
-`fork/ci-check.ts` runs the `run` steps of upstream's `test` job in `.github/workflows/test.yml`, in order, with GitHub's bash flags. `CI` is not set: upstream tests read it as GitHub's runner image and then demand PowerShell. Steps that use a GitHub action (`uses:`) are skipped; checkout and Bun come from Crabbox. The same command runs locally with `bun fork/ci-check.ts`.
+`fork/ci-check.ts` runs the `run` steps of upstream's `test` job in `.github/workflows/test.yml`, in order, with GitHub's bash flags. It removes `CI` from the steps' environment: upstream tests read it as GitHub's runner image and then demand PowerShell. Steps that use a GitHub action (`uses:`) are skipped; checkout and Bun come from Crabbox. The same command runs locally with `bun fork/ci-check.ts`.
 
 ## Take an upstream release
 

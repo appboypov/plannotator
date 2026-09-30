@@ -1,8 +1,8 @@
 /**
  * Fork check: runs the `run` steps of upstream's `test` job from
  * .github/workflows/test.yml, in order, with the bash flags of GitHub's Linux
- * runner. CI is not set: upstream tests read it as "GitHub's runner image" and
- * then demand tools only that image has (PowerShell).
+ * runner. The steps run without CI in their environment: upstream tests read it
+ * as "GitHub's runner image" and then demand tools only that image has (PowerShell).
  * GitHub Actions is off for this fork; Crabbox runs this (`crabbox job run check`).
  * See fork/README.md and adr/0003-fork-owned-code-and-checks.md.
  */
@@ -28,11 +28,13 @@ if (!steps?.length) {
 }
 
 const runSteps = steps.filter((step): step is Step & { run: string } => typeof step.run === "string");
+const { CI: _ci, ...env } = process.env;
 for (const [index, step] of runSteps.entries()) {
   const label = step.name ?? step.run.split("\n")[0];
   console.log(`\n=== fork check ${index + 1}/${runSteps.length}: ${label}`);
   const result = Bun.spawnSync(["bash", "--noprofile", "--norc", "-eo", "pipefail", "-c", step.run], {
     cwd: repoRoot,
+    env,
     stdio: ["inherit", "inherit", "inherit"],
   });
   if (result.exitCode !== 0) {
