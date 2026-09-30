@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
 import { parseAnnotateArgs, type ParsedAnnotateArgs } from "@plannotator/shared/annotate-args";
+import { parseReviewArgs, resolveReviewTarget } from "@plannotator/shared/review-args";
 import {
   composeReviewApprovedMessage,
   getAnnotateApprovedWithNotesPrompt,
@@ -55,6 +56,8 @@ export interface OpenCodePlanReviewResult {
   feedback?: string;
   savedPath?: string;
   agentSwitch?: string;
+  /** The reviewer only answered the plan's questions (absent from older binaries). */
+  answersOnly?: boolean;
 }
 
 export interface OpenCodeBridgeAgent {
@@ -169,6 +172,21 @@ function toastPlannotatorUrl(client: OpenCodeClient, message: string, toastedUrl
     }
   } catch {
     // Visible URL delivery is best-effort.
+  }
+}
+
+// A refused review target must be SEEN: `log` alone never reaches the TUI, so
+// the command would appear to do nothing. Same best-effort toast surface as
+// `toastPlannotatorUrl` (OpenCode 2 has no `tui` domain and keeps the log).
+function logAndToastError(client: OpenCodeClient, message: string): void {
+  log(client, "error", message);
+  try {
+    const result = client.tui?.showToast?.({
+      body: { title: "Plannotator", message, variant: "error" },
+    }) as { catch?: (onRejected: () => void) => unknown } | undefined;
+    if (result && typeof result.catch === "function") result.catch(() => {});
+  } catch {
+    // Toast delivery is best-effort.
   }
 }
 
@@ -685,9 +703,23 @@ export async function handleCliCommand(input: {
 
   try {
     if (input.command === "plannotator-review") {
+      const parsed = parseReviewArgs(input.rawArgs);
+      if (parsed.errors.length) throw new Error(parsed.errors.join("\n"));
+      // Older binaries ignore positional paths. A distinct internal command
+      // makes version skew fail before opening a review of the wrong repo.
+      // Prose that names no directory keeps the old command, so it still
+      // works against an old binary exactly as before.
+      let directoryTarget: string | undefined;
+      try {
+        directoryTarget = resolveReviewTarget(parsed, cwd).directory;
+      } catch (error) {
+        logAndToastError(input.client, `[Plannotator] ${error instanceof Error ? error.message : String(error)}`);
+        return;
+      }
+      const command = directoryTarget ? "opencode-review-directory" : "opencode-review";
       const result = await runPlannotatorCli({
         client: input.client,
-        args: ["opencode-review"],
+        args: [command],
         cwd,
         input: JSON.stringify({
           arguments: input.rawArgs,
@@ -709,6 +741,11 @@ export async function handleCliCommand(input: {
       });
       if (result.exitCode !== 0) {
         log(input.client, "error", result.stderr.trim() || `Plannotator CLI exited with code ${result.exitCode}`);
+        // >= 0.27.11 answers "Unknown command"; older binaries fall into the
+        // plan hook path and answer "No plan content in hook event".
+        if (directoryTarget && /unknown (?:subcommand|command)|no plan content in hook event/i.test(result.stderr)) {
+          logAndToastError(input.client, "Update the Plannotator CLI to review a directory from OpenCode.");
+        }
         return;
       }
 
