@@ -31,6 +31,7 @@ function context(overrides: Partial<ServiceCommandContext> & { answer?: (args: s
     version: "0.27.23-appboypov.abc",
     platform: "darwin",
     home,
+    cwd: "/work",
     uid: 501,
     env: {},
     launchctl: (args) => (calls.push(args.join(" ")), (overrides.answer ?? (() => OK))(args)),
@@ -38,12 +39,12 @@ function context(overrides: Partial<ServiceCommandContext> & { answer?: (args: s
     out: (line) => void lines.push(line),
     ...overrides,
   };
-  return { ctx, home, calls, lines, plan: servicePlan({ home, env: ctx.env }) };
+  return { ctx, home, calls, lines, plan: servicePlan({ home, cwd: ctx.cwd, env: ctx.env }) };
 }
 
 describe("the LaunchAgent plist", () => {
   test("Given no settings, launchd runs the installed binary's serve, keeps it alive and logs under ~/Library/Logs", () => {
-    const plan = servicePlan({ home: "/Users/me", env: {} });
+    const plan = servicePlan({ home: "/Users/me", cwd: "/work", env: {} });
     const plist = renderPlist(plan);
     expect(plan.programArguments).toEqual(["/Users/me/.local/bin/plannotator", "serve"]);
     expect(plist).toContain("<key>KeepAlive</key>\n  <true/>");
@@ -57,6 +58,7 @@ describe("the LaunchAgent plist", () => {
   test("Given door and port settings in the installing environment, the plist carries exactly those that are set", () => {
     const plan = servicePlan({
       home: "/Users/me",
+      cwd: "/work",
       env: { PLANNOTATOR_SERVICE_PORT: "4497", PLANNOTATOR_PUBLIC_PORT: "off", PLANNOTATOR_TEMPORARY_ORIGIN: "https://a.example?x=1&y=<2>", PLANNOTATOR_REVIEWS_DIR: " ", HOME: "/x" },
     });
     expect(plan.port).toBe(4497);
@@ -64,6 +66,12 @@ describe("the LaunchAgent plist", () => {
     expect(plan.environment.PLANNOTATOR_REVIEWS_DIR).toBeUndefined();
     expect(plan.environment.HOME).toBeUndefined();
     expect(renderPlist(plan)).toContain("<string>https://a.example?x=1&amp;y=&lt;2&gt;</string>");
+  });
+
+  test("Given a relative reviews folder, the plist carries it resolved against where install ran", () => {
+    const plan = servicePlan({ home: "/Users/me", cwd: "/work", env: { PLANNOTATOR_REVIEWS_DIR: "reviews", PLANNOTATOR_DATA_DIR: "/data" } });
+    expect(plan.environment.PLANNOTATOR_REVIEWS_DIR).toBe("/work/reviews");
+    expect(plan.environment.PLANNOTATOR_DATA_DIR).toBe("/data");
   });
 });
 
@@ -75,6 +83,15 @@ describe("plannotator service install", () => {
     expect(existsSync(plan.binary)).toBe(false);
     expect(existsSync(plan.plistFile)).toBe(false);
     expect(lines.join("\n")).toContain("bun fork/build-binary.ts");
+  });
+
+  test("Given port 0 or a non-number port, install refuses before it copies or loads anything", async () => {
+    for (const port of ["0", "abc"]) {
+      const { ctx, calls, plan } = context({ env: { PLANNOTATOR_SERVICE_PORT: port } });
+      expect(await runServiceCommand(["install"], ctx)).toBe(2);
+      expect(calls).toEqual([]);
+      expect(existsSync(plan.binary)).toBe(false);
+    }
   });
 
   test("Given a loaded service, install puts the binary in ~/.local/bin and replaces the LaunchAgent", async () => {

@@ -41,6 +41,8 @@ export type ServiceCommandContext = {
   version: string | undefined;
   platform: string;
   home: string;
+  /** Resolves relative folder settings before they go into the plist. */
+  cwd: string;
   uid: number;
   env: Record<string, string | undefined>;
   launchctl: Launchctl;
@@ -65,7 +67,7 @@ export async function runServiceCommand(args: readonly string[], context: Servic
     context.out("The Plannotator service is a macOS LaunchAgent. On this platform run `plannotator serve` under your own supervisor.");
     return 1;
   }
-  const plan = servicePlan({ home: context.home, env: context.env });
+  const plan = servicePlan({ home: context.home, cwd: context.cwd, env: context.env });
   const domain = `gui/${context.uid}`;
   try {
     if (action === "install") return await install(plan, domain, context);
@@ -83,6 +85,12 @@ async function install(plan: ServicePlan, domain: string, context: ServiceComman
       "Run `service install` from a built binary, not from source: in the fork checkout, `bun fork/build-binary.ts && fork/dist/plannotator service install`.",
     );
     return 1;
+  }
+  if (!Number.isInteger(plan.port) || plan.port < 1 || plan.port > 65535) {
+    context.out(
+      `PLANNOTATOR_SERVICE_PORT=${JSON.stringify(plan.environment.PLANNOTATOR_SERVICE_PORT)} is not a port from 1 to 65535; the LaunchAgent needs a fixed port. Fix or unset it. Nothing was installed.`,
+    );
+    return 2;
   }
   const copied = installBinary(context.execPath, plan);
   context.out(copied ? `Installed plannotator ${context.version} at ${plan.binary}` : `${plan.binary} is this binary (${context.version})`);
@@ -155,6 +163,7 @@ export function liveServiceContext(version: string | undefined): ServiceCommandC
     version,
     platform: process.platform,
     home: homedir(),
+    cwd: process.cwd(),
     uid: process.getuid?.() ?? 0,
     env: process.env,
     launchctl: runLaunchctl,

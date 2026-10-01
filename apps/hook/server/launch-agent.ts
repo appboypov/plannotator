@@ -6,7 +6,7 @@
  */
 import { spawnSync } from "node:child_process";
 import { chmodSync, copyFileSync, existsSync, mkdirSync, readFileSync, realpathSync, renameSync, rmSync, writeFileSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { dirname, join, resolve } from "node:path";
 
 export const SERVICE_LABEL = "nl.de-appspecialist.plannotator";
 
@@ -51,19 +51,25 @@ export type ServicePlan = {
 export type LaunchctlResult = { status: number | null; stdout: string; stderr: string };
 export type Launchctl = (args: string[]) => LaunchctlResult;
 
-/** Everything the LaunchAgent is made of. Pure, so the plist is testable without launchd. */
-export function servicePlan({ home, env }: { home: string; env: Record<string, string | undefined> }): ServicePlan {
+/** Settings holding a folder: carried as absolute paths, since launchd runs serve from another working directory. */
+const FOLDER_SETTINGS: Record<string, true> = { PLANNOTATOR_REVIEWS_DIR: true, PLANNOTATOR_DATA_DIR: true };
+
+/**
+ * Everything the LaunchAgent is made of. Pure, so the plist is testable without launchd. `port` is
+ * NaN for a `PLANNOTATOR_SERVICE_PORT` that is not a number; install refuses it and port 0.
+ */
+export function servicePlan({ home, cwd, env }: { home: string; cwd: string; env: Record<string, string | undefined> }): ServicePlan {
   const binary = join(home, ".local", "bin", "plannotator");
   const logDir = join(home, "Library", "Logs", LOG_DIR_NAME);
   const carried: Record<string, string> = {};
   for (const key of CARRIED_SETTINGS) {
     const value = env[key]?.trim();
-    if (value) carried[key] = value;
+    if (value) carried[key] = FOLDER_SETTINGS[key] ? resolve(cwd, value) : value;
   }
-  const port = Number(carried.PLANNOTATOR_SERVICE_PORT ?? DEFAULT_PORT);
+  const portText = carried.PLANNOTATOR_SERVICE_PORT;
   return {
     label: SERVICE_LABEL,
-    port: Number.isInteger(port) ? port : DEFAULT_PORT,
+    port: portText === undefined ? DEFAULT_PORT : /^\d+$/.test(portText) ? Number(portText) : Number.NaN,
     binary,
     plistFile: join(home, "Library", "LaunchAgents", `${SERVICE_LABEL}.plist`),
     logDir,
