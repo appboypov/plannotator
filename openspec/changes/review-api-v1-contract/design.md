@@ -27,6 +27,8 @@ Story 2 of `epic-plannotator-service` writes the review API v1 contract so the s
 - **Parsers are part of the contract.** `parse.ts` holds the request and listen-message checks and the error texts (`ERRORS`), so the stub and the service refuse with the same words. Unit tests cover them. It also holds `isLocalRequest`, Lavish's Host and Origin rule (403 `forbidden`), so the stub already refuses what the service will (local review finding).
 - **Instrumentation.** The stub logs one start line to stderr, like upstream's CLI; no logging facade exists in the fork yet.
 
+- **Local review (codex, gpt-6-sol).** Fixed: the stub's reopen gate for a finished Review, `answers: null` refused, Host and Origin rule, the stub page escapes the file path, the stub keeps subscriptions (list `listeners`) and delivers and replays Cancel notices. Declined: limiting `ack` to notices the socket received, because the contract (as in Lavish) lets any listener acknowledge any notice; the docs now say so.
+
 ## Risks / Trade-offs
 
 - [The plugin copies `lavish-feedback` element names] -> epic 2 renames its message elements; the wire stays the same.

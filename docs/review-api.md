@@ -189,7 +189,7 @@ Connect a WebSocket to `/api/review/v1/listen?session=<omp session id>` on the l
 ### Client messages (`ListenClientMessage`)
 
 - `SubscribeMessage` `{ "type": "subscribe", "reviews": "all" | ["<review_id>", …] }`: replaces the subscription. Duplicate ids count once; an unknown id is heard once that Review exists; `[]` stops listening and keeps the socket open. The server first replays the backlog of every Review the subscription adds (open Remarks, then pending notices, in store order), then sends a `listener` event for each overlapping session, then confirms with `subscribed`.
-- `AckMessage` `{ "type": "ack", "id": "nt_…" }`: acknowledges a Finish or Cancel notice so no later subscription replays it. A successful ack sends nothing back.
+- `AckMessage` `{ "type": "ack", "id": "nt_…" }`: acknowledges a Finish or Cancel notice so no later subscription replays it. A successful ack sends nothing back; acknowledging an acknowledged notice again changes nothing. As in Lavish, any listener may acknowledge any notice. Remarks are not acknowledged; they stay open until a Reply answers them.
 
 ### Server messages (`ListenServerMessage`)
 
