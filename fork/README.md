@@ -132,6 +132,16 @@ crabbox job run check
 
 `fork/ci-check.ts` runs the `run` steps of upstream's `test` job in `.github/workflows/test.yml`, in order, with GitHub's bash flags. It removes `CI` from the steps' environment: upstream tests read it as GitHub's runner image and then demand PowerShell. Steps that use a GitHub action (`uses:`) are skipped; checkout and Bun come from Crabbox. The same command runs locally with `bun fork/ci-check.ts`.
 
+### End-to-end against the installed service
+
+`fork/e2e/service.e2e.ts` runs against the live install on this Mac, not a dev run: the LaunchAgent on 127.0.0.1:4397, `~/.local/bin/plannotator` and the public door behind `https://ctas.de-appspecialist.nl/plannotator/`. Run it on purpose, after an install or update:
+
+```sh
+bun test ./fork/e2e/service.e2e.ts
+```
+
+It checks that health names the LaunchAgent and the installed binary's version, that two documents stay open at once on their own pages, that a Remark sent while no one listens reaches a later listener, that `plannotator annotate --gate --json` prints `{"decision":"approved"}` when the page approves, and that the public door answers 404 for a `local` Review and 200 once it is `public`. Each scenario writes scratch files under the temp folder and cancels its Reviews after; the cancelled Reviews stay in the list. The file name matches none of `bun test`'s globs, so upstream's `bun test` and the Crabbox check never run it. It never skips: with the service stopped every scenario fails.
+
 ## Update
 
 `~/Work/prompts/update-plannotator.md` is the whole update, fork and plugin together. In short:
