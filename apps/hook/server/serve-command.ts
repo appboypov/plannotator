@@ -9,6 +9,11 @@ import { dirname } from "node:path";
 import { startAnnotateServer, type AnnotateServerOptions } from "@plannotator/server/annotate";
 import { detectProjectName } from "@plannotator/server/project";
 import {
+  DEFAULT_PUBLIC_HOST,
+  DEFAULT_PUBLIC_PEER,
+  PUBLIC_HOST_ENV,
+  PUBLIC_PEER_ENV,
+  PUBLIC_PORT_ENV,
   REVIEWS_DIR_ENV,
   SERVICE_PORT_ENV,
   resolveServiceSettings,
@@ -23,7 +28,8 @@ export const SERVE_USAGE = [
   "",
   "Run the always-on review service on 127.0.0.1: one link per document under",
   "/plannotator/session/<review_id>/, the review API under /api/review/, and",
-  "/plannotator/health. See docs/review-api.md.",
+  "/plannotator/health; and the public door, which serves only public Reviews to",
+  "the VPS behind ctas.de-appspecialist.nl. See docs/review-api.md.",
   "",
   "Options:",
   `  --port <n>    Port on 127.0.0.1 (default 4397, or ${SERVICE_PORT_ENV}); 0 picks a free port`,
@@ -31,6 +37,9 @@ export const SERVE_USAGE = [
   "Environment:",
   `  ${SERVICE_PORT_ENV}   Port when --port is absent`,
   `  ${REVIEWS_DIR_ENV}    Folder with one folder per Review (default <data dir>/reviews)`,
+  `  ${PUBLIC_HOST_ENV}    Public door address (default ${DEFAULT_PUBLIC_HOST})`,
+  `  ${PUBLIC_PORT_ENV}    Public door port (default 4399); off starts no public door`,
+  `  ${PUBLIC_PEER_ENV}    The one address the public door accepts (default ${DEFAULT_PUBLIC_PEER})`,
 ].join("\n");
 
 /** What every Review's page shares with the plain annotate command. */
@@ -54,7 +63,7 @@ export async function runServeCommand(options: {
     console.error(`${settings.error}\n\n${SERVE_USAGE}`);
     process.exit(2);
   }
-  const { port, reviewsDir } = settings.value;
+  const { port, reviewsDir, publicDoor } = settings.value;
 
   // Pages are loopback-only and pick free ports: the service is their only door,
   // whatever PLANNOTATOR_REMOTE or PLANNOTATOR_PORT the launching shell carried.
@@ -93,5 +102,5 @@ export async function runServeCommand(options: {
     return { port: page.port, stop: page.stop };
   };
 
-  await startReviewService({ port, reviewsDir, version: options.version, startPage });
+  await startReviewService({ port, reviewsDir, version: options.version, startPage, publicDoor });
 }

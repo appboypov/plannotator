@@ -302,16 +302,27 @@ describe("review service", () => {
 describe("service settings", () => {
   test("--port wins over the environment, which wins over 4397", () => {
     const env = { PLANNOTATOR_SERVICE_PORT: "5100", PLANNOTATOR_REVIEWS_DIR: "/tmp/reviews" };
-    expect(resolveServiceSettings(["--port", "5200"], env)).toEqual({ ok: true, value: { port: 5200, reviewsDir: "/tmp/reviews" } });
-    expect(resolveServiceSettings(["--port=0"], env)).toEqual({ ok: true, value: { port: 0, reviewsDir: "/tmp/reviews" } });
-    expect(resolveServiceSettings([], env)).toEqual({ ok: true, value: { port: 5100, reviewsDir: "/tmp/reviews" } });
+    expect(resolveServiceSettings(["--port", "5200"], env)).toMatchObject({ ok: true, value: { port: 5200, reviewsDir: "/tmp/reviews" } });
+    expect(resolveServiceSettings(["--port=0"], env)).toMatchObject({ ok: true, value: { port: 0, reviewsDir: "/tmp/reviews" } });
+    expect(resolveServiceSettings([], env)).toMatchObject({ ok: true, value: { port: 5100, reviewsDir: "/tmp/reviews" } });
     // The default follows the data dir, which beforeEach points at PLANNOTATOR_DATA_DIR=<dir>/data.
-    expect(resolveServiceSettings([], {})).toEqual({ ok: true, value: { port: 4397, reviewsDir: join(dir, "data", "reviews") } });
+    expect(resolveServiceSettings([], {})).toMatchObject({ ok: true, value: { port: 4397, reviewsDir: join(dir, "data", "reviews") } });
   });
 
   test("refuses a port that is not a whole number in range, and unknown arguments", () => {
     for (const args of [["--port", "70000"], ["--port", "12ab"], ["--port", "-1"], ["--port"], ["--verbose"]]) {
       expect(resolveServiceSettings(args, {}).ok).toBe(false);
     }
+  });
+
+  test("the public door defaults to the live address and peer, takes the environment, and turns off", () => {
+    expect(resolveServiceSettings([], {})).toMatchObject({
+      ok: true,
+      value: { publicDoor: { host: "100.111.186.85", port: 4399, peer: "100.67.134.112" } },
+    });
+    const env = { PLANNOTATOR_PUBLIC_HOST: "127.0.0.1", PLANNOTATOR_PUBLIC_PORT: "4529", PLANNOTATOR_PUBLIC_PEER: "127.0.0.1" };
+    expect(resolveServiceSettings([], env)).toMatchObject({ ok: true, value: { publicDoor: { host: "127.0.0.1", port: 4529, peer: "127.0.0.1" } } });
+    expect(resolveServiceSettings([], { PLANNOTATOR_PUBLIC_PORT: "off" })).toMatchObject({ ok: true, value: { publicDoor: null } });
+    expect(resolveServiceSettings([], { PLANNOTATOR_PUBLIC_PORT: "43a" }).ok).toBe(false);
   });
 });
