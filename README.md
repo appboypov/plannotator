@@ -1,3 +1,5 @@
+> **appboypov/plannotator fork.** This fork adds an always-on review service: one lasting link per Markdown document, a review API on `127.0.0.1:4397`, a public door for `https://ctas.de-appspecialist.nl/plannotator/` and a temporary door for ngrok, run by launchd. Install it, open a document, and read about its doors, Visibility, settings and updates in [fork/README.md](fork/README.md); the internals are in [docs/invariants.md](docs/invariants.md). The rest of this file is upstream's README, unchanged.
+
 <p align="center">
   <img src=".github/assets/banner.webp" alt="Plannotator" width="640" />
 </p>
