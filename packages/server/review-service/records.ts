@@ -1,11 +1,13 @@
 /**
- * What a Review's listeners hear, stored in the Review's folder so it waits for them
- * across sessions and restarts:
+ * What a Review's listeners hear and its page shows, stored in the Review's folder so
+ * it waits for them across sessions and restarts:
  * - Remarks (`remarks.json`): each annotation the reviewer sends with Send feedback.
- *   A Remark stays open until a Reply answers it (story 1.8) and reaches each listener
- *   session once: the sessions it was delivered to are stored with it.
+ *   A Remark stays open until a Reply answers it and reaches each listener session
+ *   once: the sessions it was delivered to are stored with it.
  * - Notices (`notices.json`): the Finish or Cancel that closed a Round, pending until
  *   any listener acknowledges it.
+ * - Replies (`replies.json`): each agent's answer, shown on the page beside the
+ *   Remarks it names; naming a Remark marks it answered.
  */
 import { randomBytes } from "node:crypto";
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
@@ -16,7 +18,11 @@ import type {
   OpenRemark,
   Remark,
   RemarkEvent,
+  RemarkId,
+  RemarkStatus,
+  Reply,
   ReviewId,
+  ReviewRepliesResponse,
   SessionId,
 } from "@plannotator/shared/review-api";
 
@@ -26,10 +32,15 @@ export const REMARKS_FILE = "remarks.json";
 /** A Review's notices file inside its own folder. */
 export const NOTICES_FILE = "notices.json";
 
+/** A Review's Replies file inside its own folder. */
+export const REPLIES_FILE = "replies.json";
+
+type RecordFile = typeof REMARKS_FILE | typeof NOTICES_FILE | typeof REPLIES_FILE;
+
 /** What the service keeps per Remark: the Remark, when it was stored, and who has it. */
 export type StoredRemark = Remark & {
   at: IsoTime;
-  status: "open" | "answered";
+  status: RemarkStatus;
   /** Listener sessions the Remark was delivered to, each once, in delivery order. */
   delivered_to: SessionId[];
 };
@@ -45,9 +56,10 @@ export type BacklogRecord = { kind: "remark"; remark: StoredRemark } | { kind: "
 
 const REMARK_ID = /^fi_[0-9a-f]{24}$/;
 const NOTICE_ID = /^nt_[0-9a-f]{24}$/;
+const REPLY_ID = /^rp_[0-9a-f]{24}$/;
 
 /** A new record id: [prefix], an underscore and 24 lowercase hex characters. */
-export function recordId(prefix: "fi" | "nt"): string {
+export function recordId(prefix: "fi" | "nt" | "rp"): string {
   return `${prefix}_${randomBytes(12).toString("hex")}`;
 }
 
@@ -100,9 +112,9 @@ export function noticeEvent(notice: StoredNotice): Notice {
 }
 
 /**
- * Every Review's Remarks and notices, in memory and in each Review's folder. Changes
- * apply in memory at once, so a delivery decided right after sees them; each file is
- * then rewritten atomically, one write after another.
+ * Every Review's Remarks, notices and Replies, in memory and in each Review's folder.
+ * Changes apply in memory at once, so a delivery decided right after sees them; each
+ * file is then rewritten atomically, one write after another.
  */
 export class ReviewRecords {
   private readonly writes = new Map<string, Promise<void>>();
@@ -111,6 +123,7 @@ export class ReviewRecords {
     private readonly folder: (reviewId: ReviewId) => string,
     private readonly remarks: Map<ReviewId, StoredRemark[]>,
     private readonly notices: Map<ReviewId, StoredNotice[]>,
+    private readonly replies: Map<ReviewId, Reply[]>,
   ) {}
 
   /** Reads the records of [reviewIds]; a missing file is none, an unreadable one is logged and kept. */
@@ -121,14 +134,21 @@ export class ReviewRecords {
   ): Promise<ReviewRecords> {
     const remarks = new Map<ReviewId, StoredRemark[]>();
     const notices = new Map<ReviewId, StoredNotice[]>();
+    const replies = new Map<ReviewId, Reply[]>();
     for (const reviewId of reviewIds) {
       const dir = folder(reviewId);
       const storedRemarks = await readList(join(dir, REMARKS_FILE), "remarks", (value) => parseRemark(value, reviewId), log);
       if (storedRemarks) remarks.set(reviewId, storedRemarks);
       const storedNotices = await readList(join(dir, NOTICES_FILE), "notices", (value) => parseNotice(value, reviewId), log);
       if (storedNotices) notices.set(reviewId, storedNotices);
+      const storedReplies = await readList(join(dir, REPLIES_FILE), "replies", (value) => parseReply(value, reviewId), log);
+      if (storedReplies) replies.set(reviewId, storedReplies);
+      // `addReply` writes the Replies before the Remarks; a stop between the two
+      // leaves a stored Reply whose Remarks still read open. The Replies win.
+      const answered = new Set((storedReplies ?? []).flatMap((reply) => reply.answers));
+      for (const remark of storedRemarks ?? []) if (answered.has(remark.id)) remark.status = "answered";
     }
-    return new ReviewRecords(folder, remarks, notices);
+    return new ReviewRecords(folder, remarks, notices, replies);
   }
 
   /** The Reviews holding records, in the order their first record was stored or loaded. */
@@ -180,6 +200,41 @@ export class ReviewRecords {
     return this.write(notice.review_id, NOTICES_FILE);
   }
 
+  /** The ids among [ids] that are not Remarks of the Review, in the order named. */
+  unknownRemarks(reviewId: ReviewId, ids: readonly RemarkId[]): RemarkId[] {
+    const known = new Set((this.remarks.get(reviewId) ?? []).map((remark) => remark.id));
+    return ids.filter((id) => !known.has(id));
+  }
+
+  /**
+   * Appends [reply] to its Review's Replies and marks each Remark it answers
+   * `answered`, so no later subscription replays it. Writes the Replies first, then
+   * the Remarks: a stop between them is repaired on load, where stored Replies mark
+   * their Remarks answered. The caller checked that every answered id is a Remark of
+   * the Review.
+   */
+  async addReply(reply: Reply): Promise<void> {
+    this.replies.set(reply.review_id, [...(this.replies.get(reply.review_id) ?? []), reply]);
+    for (const remark of this.remarks.get(reply.review_id) ?? []) {
+      if (reply.answers.includes(remark.id)) remark.status = "answered";
+    }
+    await this.write(reply.review_id, REPLIES_FILE);
+    if (reply.answers.length > 0) await this.write(reply.review_id, REMARKS_FILE);
+  }
+
+  /** What the Review's page shows: every Remark with the Replies that answer it, then the Replies that answer none. */
+  page(reviewId: ReviewId): ReviewRepliesResponse {
+    const replies = this.replies.get(reviewId) ?? [];
+    return {
+      review_id: reviewId,
+      remarks: (this.remarks.get(reviewId) ?? []).map((remark) => {
+        const { delivered_to: _deliveredTo, ...shown } = remark;
+        return { ...shown, replies: replies.filter((reply) => reply.answers.includes(remark.id)) };
+      }),
+      replies: replies.filter((reply) => reply.answers.length === 0),
+    };
+  }
+
   /**
    * Acknowledges the notice [id] of any Review so no later subscription replays it:
    * `unknown` when no notice has that id, `unchanged` when it was acknowledged before.
@@ -202,7 +257,7 @@ export class ReviewRecords {
     await Promise.all(this.writes.values());
   }
 
-  private write(reviewId: ReviewId, file: typeof REMARKS_FILE | typeof NOTICES_FILE): Promise<void> {
+  private write(reviewId: ReviewId, file: RecordFile): Promise<void> {
     const key = `${reviewId}/${file}`;
     const previous = this.writes.get(key) ?? Promise.resolve();
     const next = previous.then(async () => {
@@ -210,7 +265,11 @@ export class ReviewRecords {
       await mkdir(folder, { recursive: true });
       const temporary = join(folder, `.${file}.${randomBytes(6).toString("hex")}.tmp`);
       const content =
-        file === REMARKS_FILE ? { remarks: this.remarks.get(reviewId) ?? [] } : { notices: this.notices.get(reviewId) ?? [] };
+        file === REMARKS_FILE
+          ? { remarks: this.remarks.get(reviewId) ?? [] }
+          : file === NOTICES_FILE
+            ? { notices: this.notices.get(reviewId) ?? [] }
+            : { replies: this.replies.get(reviewId) ?? [] };
       await writeFile(temporary, `${JSON.stringify(content, null, 2)}\n`);
       await rename(temporary, join(folder, file));
     });
@@ -311,4 +370,15 @@ function parseNotice(value: unknown, reviewId: ReviewId): StoredNotice | undefin
   }
   if (type === "cancel") return { type, ...kept };
   return undefined;
+}
+
+function parseReply(value: unknown, reviewId: ReviewId): Reply | undefined {
+  const id = field(value, "id");
+  const replyText = field(value, "text");
+  const answers = field(value, "answers");
+  const at = field(value, "at");
+  if (typeof id !== "string" || !REPLY_ID.test(id)) return undefined;
+  if (field(value, "review_id") !== reviewId || typeof replyText !== "string" || typeof at !== "string") return undefined;
+  if (!Array.isArray(answers) || !answers.every((answer) => typeof answer === "string")) return undefined;
+  return { id, review_id: reviewId, text: replyText, answers, at };
 }
