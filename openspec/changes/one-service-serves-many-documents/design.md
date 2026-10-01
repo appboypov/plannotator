@@ -38,6 +38,8 @@ flowchart LR
 - **Module placement (ADR 0003).** Fork-owned: `packages/server/review-service/` (`settings.ts`, `store.ts`, `pages.ts`, `service.ts`, `index.ts`, exported as `@plannotator/server/review-service`) and `apps/hook/server/serve-command.ts`. Upstream call sites: the `serve` branch in `apps/hook/server/index.ts` (one import, one branch), `"serve"` in `INTERNAL_SUBCOMMANDS` of `apps/hook/server/unknown-subcommand.ts` (internal, like `install-runtime`: run by the LaunchAgent, so upstream's skill freshness test does not demand a skill entry; `serve --help` prints its usage from the fork module), one export line in `packages/server/package.json`.
 - **Instrumentation.** No logging facade exists in the fork; the service logs to stderr with upstream's `[plannotator]` prefix: the listening line with the Review count, each new Review, each page that fails to start, each skipped state folder.
 - **Tests.** `packages/server/review-service/service.test.ts` runs the service against real upstream annotate servers: two documents, lasting ids (symlink included), `api/plan` per page, single page start under racing requests, restart from disk, list filter, Visibility kept, health and version, refusals, page start failure and retry, and settings precedence.
+- **Forwarded encoding.** The service asks page servers for `identity` encoding, so a body passes through byte for byte with its own headers.
+- **Local review (codex, gpt-6-sol).** Fixed: an undefined `hasBody` in `forward()` (an edit in flight while the review read the working tree). Declined: routing the page's root-relative `/api/...` calls to its Review; that is story 4's change to the page, not the service.
 
 ## Risks / Trade-offs
 

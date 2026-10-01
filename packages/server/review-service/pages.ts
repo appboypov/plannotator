@@ -11,7 +11,7 @@ export type ReviewPage = {
 export type StartReviewPage = (review: StoredReview) => Promise<ReviewPage>;
 
 /** Request headers the service does not pass to a page server. */
-const DROPPED_HEADERS = ["host", "connection", "keep-alive", "accept-encoding"];
+const DROPPED_HEADERS = ["host", "connection", "keep-alive"];
 
 /**
  * The pages of the service's Reviews. Each Review gets its own upstream annotate
@@ -41,6 +41,8 @@ export class ReviewPages {
   async forward(request: Request, page: ReviewPage, path: string, search: string): Promise<Response> {
     const headers = new Headers(request.headers);
     for (const name of DROPPED_HEADERS) headers.delete(name);
+    // Bodies pass through as the page server wrote them, so no encoding is negotiated on the hop.
+    headers.set("accept-encoding", "identity");
     const hasBody = request.method !== "GET" && request.method !== "HEAD";
     const answer = await fetch(`http://127.0.0.1:${page.port}${path}${search}`, {
       method: request.method,
