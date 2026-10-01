@@ -8,6 +8,7 @@ const INTERNAL_SUBCOMMANDS = [
   "opencode-annotate-last",
   "copilot-plan",
   "serve", // fork: the review service, run by its LaunchAgent
+  "service", // fork: install, uninstall or show the review service's LaunchAgent
 ] as const;
 
 const SUGGESTABLE_SUBCOMMANDS = [

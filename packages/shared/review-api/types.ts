@@ -69,6 +69,8 @@ export type HealthResponse = {
   /** The fork build version, such as `0.27.22`. */
   version: string;
   api: ApiVersion;
+  /** The LaunchAgent running the service, present when launchd runs it. */
+  service?: { label: string };
 };
 
 // ---------------------------------------------------------------------------
