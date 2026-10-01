@@ -67,18 +67,27 @@ export function annotateSessionId(): string {
 }
 
 /**
- * Whether `annotate` takes the service for this target: a local file, as the service
- * keeps one Review per file. URLs, folders, live apps, `--tailscale` and `--markdown`
- * keep upstream's one-shot server: the service has no page for them.
+ * Whether `annotate` takes the service for this target: a local Markdown or text file,
+ * as the service keeps one Review per file. URLs, folders, live apps, raw HTML
+ * (a local .html file or `--render-html`), `--tailscale` and `--markdown` keep
+ * upstream's one-shot server: the service has no page for them.
  */
 export function annotatesThroughService(target: {
   isUrl: boolean;
   folderPath?: string;
   liveApp: boolean;
+  rawHtml: boolean;
   tailscale: boolean;
   renderMarkdown: boolean;
 }): boolean {
-  return !target.isUrl && !target.folderPath && !target.liveApp && !target.tailscale && !target.renderMarkdown;
+  return (
+    !target.isUrl &&
+    !target.folderPath &&
+    !target.liveApp &&
+    !target.rawHtml &&
+    !target.tailscale &&
+    !target.renderMarkdown
+  );
 }
 
 /**
