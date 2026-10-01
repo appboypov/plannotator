@@ -53,6 +53,7 @@ import { startDoor, type Door, type DoorListen } from "./doors.ts";
 import { ReviewPages, type StartReviewPage } from "./pages.ts";
 import { ReviewRecords, openRemark, recordId, remarksFromFeedback, type StoredNotice } from "./records.ts";
 import { ReviewStore, reviewIdForFile, type StoredReview } from "./store.ts";
+import { TEMPORARY_DOOR_HOST } from "./settings.ts";
 
 export type ReviewServiceOptions = {
   /** Port on [hostname]; `0` picks a free one (read it from `url`). */
@@ -64,7 +65,7 @@ export type ReviewServiceOptions = {
   /** Starts a Review's page: the upstream annotate server for its document. */
   startPage: StartReviewPage;
   hostname?: string;
-  /** The ngrok origin of `temporary` links until story 1.11's setting names another. */
+  /** The origin of `temporary` links and the one host the temporary door answers; the fixed ngrok address when absent. */
   temporaryOrigin?: string;
   /** The LaunchAgent label health names when launchd runs the service (`plannotator service install`). */
   serviceLabel?: string;
@@ -73,6 +74,8 @@ export type ReviewServiceOptions = {
   heartbeatMs?: number;
   /** The public door for ctas (ADR 0007); none when null or absent. */
   publicDoor?: DoorListen | null;
+  /** The temporary door for ngrok on 127.0.0.1:<port>, accepting only loopback (ADR 0007); none when null or absent. */
+  temporaryPort?: number | null;
   /** Requests per visitor per minute through a door; 300 unless a test names another. */
   doorRateLimit?: number;
 };
@@ -452,6 +455,20 @@ export async function startReviewService(options: ReviewServiceOptions): Promise
         visibility: "public",
         // Caddy passes the visitor's Host (ctas); the VPS may also call the door's own address.
         hostnames: [new URL(PUBLIC_ORIGIN).hostname, host],
+      }),
+    );
+  }
+  if (options.temporaryPort !== undefined && options.temporaryPort !== null) {
+    doors.push(
+      startDoor({
+        host: TEMPORARY_DOOR_HOST,
+        port: options.temporaryPort,
+        // ngrok's agent runs on this Mac; nothing else may connect.
+        peer: TEMPORARY_DOOR_HOST,
+        ...doorOptions,
+        visibility: "temporary",
+        // ngrok passes the visitor's Host: only the link's own host is answered.
+        hostnames: [new URL(origins.temporary).hostname],
       }),
     );
   }

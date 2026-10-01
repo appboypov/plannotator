@@ -7,6 +7,15 @@
 import { spawnSync } from "node:child_process";
 import { chmodSync, copyFileSync, existsSync, mkdirSync, readFileSync, realpathSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
+import { PUBLIC_PORT, TEMPORARY_PORT } from "@plannotator/shared/review-api";
+import {
+  DEFAULT_PUBLIC_HOST,
+  DEFAULT_PUBLIC_PEER,
+  PUBLIC_HOST_ENV,
+  PUBLIC_PEER_ENV,
+  PUBLIC_PORT_ENV,
+  TEMPORARY_PORT_ENV,
+} from "@plannotator/server/review-service";
 
 export const SERVICE_LABEL = "nl.de-appspecialist.plannotator";
 
@@ -14,9 +23,22 @@ export const SERVICE_LABEL = "nl.de-appspecialist.plannotator";
 export const SERVICE_LABEL_ENV = "PLANNOTATOR_SERVICE_LABEL";
 
 /**
+ * The live doors the LaunchAgent runs (as Lavish's live profile carries its ports): the
+ * public door on this Mac's Tailscale address for the VPS, the temporary door on
+ * 127.0.0.1 for ngrok. `plannotator serve` run by hand opens no door, so a dev run never
+ * binds the Tailscale address or claims the live ports.
+ */
+export const LIVE_DOOR_SETTINGS: Readonly<Record<string, string>> = {
+  [PUBLIC_HOST_ENV]: DEFAULT_PUBLIC_HOST,
+  [PUBLIC_PORT_ENV]: String(PUBLIC_PORT),
+  [PUBLIC_PEER_ENV]: DEFAULT_PUBLIC_PEER,
+  [TEMPORARY_PORT_ENV]: String(TEMPORARY_PORT),
+};
+
+/**
  * Settings `plannotator serve` reads that `service install` carries from its own
- * environment into the plist when they are set. Left unset, serve's defaults apply:
- * port 4397, the public door on 4399 and the temporary door on 4398.
+ * environment into the plist when they are set, over the live door settings; `off` as a
+ * door port installs the service without that door.
  */
 export const CARRIED_SETTINGS = [
   "PLANNOTATOR_SERVICE_PORT",
@@ -54,6 +76,16 @@ export type Launchctl = (args: string[]) => LaunchctlResult;
 /** Settings holding a folder: carried as absolute paths, since launchd runs serve from another working directory. */
 const FOLDER_SETTINGS: Record<string, true> = { PLANNOTATOR_REVIEWS_DIR: true, PLANNOTATOR_DATA_DIR: true };
 
+/** The [CARRIED_SETTINGS] the installing environment sets, folder settings made absolute against [cwd]. */
+export function carriedSettings(env: Record<string, string | undefined>, cwd: string): Record<string, string> {
+  const carried: Record<string, string> = {};
+  for (const key of CARRIED_SETTINGS) {
+    const value = env[key]?.trim();
+    if (value) carried[key] = FOLDER_SETTINGS[key] ? resolve(cwd, value) : value;
+  }
+  return carried;
+}
+
 /**
  * Everything the LaunchAgent is made of. Pure, so the plist is testable without launchd. `port` is
  * NaN for a `PLANNOTATOR_SERVICE_PORT` that is not a number; install refuses it and port 0.
@@ -61,11 +93,7 @@ const FOLDER_SETTINGS: Record<string, true> = { PLANNOTATOR_REVIEWS_DIR: true, P
 export function servicePlan({ home, cwd, env }: { home: string; cwd: string; env: Record<string, string | undefined> }): ServicePlan {
   const binary = join(home, ".local", "bin", "plannotator");
   const logDir = join(home, "Library", "Logs", LOG_DIR_NAME);
-  const carried: Record<string, string> = {};
-  for (const key of CARRIED_SETTINGS) {
-    const value = env[key]?.trim();
-    if (value) carried[key] = FOLDER_SETTINGS[key] ? resolve(cwd, value) : value;
-  }
+  const carried = carriedSettings(env, cwd);
   const portText = carried.PLANNOTATOR_SERVICE_PORT;
   return {
     label: SERVICE_LABEL,
@@ -79,6 +107,7 @@ export function servicePlan({ home, cwd, env }: { home: string; cwd: string; env
       [SERVICE_LABEL_ENV]: SERVICE_LABEL,
       // launchd starts with /usr/bin:/bin:/usr/sbin:/sbin; pages run git and other tools.
       PATH: [join(home, ".local", "bin"), "/opt/homebrew/bin", "/usr/local/bin", "/usr/bin", "/bin", "/usr/sbin", "/sbin"].join(":"),
+      ...LIVE_DOOR_SETTINGS,
       ...carried,
     },
   };

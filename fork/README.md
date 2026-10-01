@@ -39,7 +39,7 @@ plannotator service status                 # launchd state and health
 plannotator service uninstall              # unloads it and removes the plist; the binary stays
 ```
 
-Logs: `~/Library/Logs/plannotator/nl.de-appspecialist.plannotator.log`. Install carries these settings from its environment into the plist when they are set, and prints them: `PLANNOTATOR_SERVICE_PORT`, `PLANNOTATOR_REVIEWS_DIR`, `PLANNOTATOR_DATA_DIR`, `PLANNOTATOR_PUBLIC_HOST`, `PLANNOTATOR_PUBLIC_PORT`, `PLANNOTATOR_PUBLIC_PEER`, `PLANNOTATOR_TEMPORARY_PORT`, `PLANNOTATOR_TEMPORARY_ORIGIN`. Unset, `plannotator serve`'s defaults apply. The plugin `omp-plannotator-review` runs these steps in its `bun run setup`, after checking the review API major. Code: `apps/hook/server/{service-command,launch-agent}.ts`, `fork/build-binary.ts`.
+Logs: `~/Library/Logs/plannotator/nl.de-appspecialist.plannotator.log`. The plist runs the live doors: `PLANNOTATOR_PUBLIC_HOST=100.111.186.85`, `PLANNOTATOR_PUBLIC_PORT=4399`, `PLANNOTATOR_PUBLIC_PEER=100.67.134.112` and `PLANNOTATOR_TEMPORARY_PORT=4398` (`plannotator serve` run by hand opens no door). Install carries these settings from its environment into the plist when they are set, over the live ones, and prints them with the doors it installed: `PLANNOTATOR_SERVICE_PORT`, `PLANNOTATOR_REVIEWS_DIR`, `PLANNOTATOR_DATA_DIR`, `PLANNOTATOR_PUBLIC_HOST`, `PLANNOTATOR_PUBLIC_PORT`, `PLANNOTATOR_PUBLIC_PEER`, `PLANNOTATOR_TEMPORARY_PORT`, `PLANNOTATOR_TEMPORARY_ORIGIN`; a door port of `off` installs the service without that door. The plugin `omp-plannotator-review` runs these steps in its `bun run setup`, after checking the review API major. Code: `apps/hook/server/{service-command,launch-agent}.ts`, `fork/build-binary.ts`.
 
 ## Check
 

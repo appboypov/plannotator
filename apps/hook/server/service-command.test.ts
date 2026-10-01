@@ -43,7 +43,7 @@ function context(overrides: Partial<ServiceCommandContext> & { answer?: (args: s
 }
 
 describe("the LaunchAgent plist", () => {
-  test("Given no settings, launchd runs the installed binary's serve, keeps it alive and logs under ~/Library/Logs", () => {
+  test("Given no settings, launchd runs the installed binary's serve with the live doors, keeps it alive and logs under ~/Library/Logs", () => {
     const plan = servicePlan({ home: "/Users/me", cwd: "/work", env: {} });
     const plist = renderPlist(plan);
     expect(plan.programArguments).toEqual(["/Users/me/.local/bin/plannotator", "serve"]);
@@ -52,10 +52,16 @@ describe("the LaunchAgent plist", () => {
     expect(plist).toContain("<string>/Users/me/Library/Logs/plannotator/nl.de-appspecialist.plannotator.log</string>");
     expect(plan.environment.PLANNOTATOR_SERVICE_LABEL).toBe(SERVICE_LABEL);
     expect(plan.port).toBe(4397);
-    expect(Object.keys(plan.environment).sort()).toEqual(["PATH", "PLANNOTATOR_SERVICE_LABEL"]);
+    const { PATH: _path, PLANNOTATOR_SERVICE_LABEL: _label, ...doors } = plan.environment;
+    expect(doors).toEqual({
+      PLANNOTATOR_PUBLIC_HOST: "100.111.186.85",
+      PLANNOTATOR_PUBLIC_PORT: "4399",
+      PLANNOTATOR_PUBLIC_PEER: "100.67.134.112",
+      PLANNOTATOR_TEMPORARY_PORT: "4398",
+    });
   });
 
-  test("Given door and port settings in the installing environment, the plist carries exactly those that are set", () => {
+  test("Given door and port settings in the installing environment, they win over the live ones and only set ones are carried", () => {
     const plan = servicePlan({
       home: "/Users/me",
       cwd: "/work",
@@ -63,6 +69,7 @@ describe("the LaunchAgent plist", () => {
     });
     expect(plan.port).toBe(4497);
     expect(plan.environment.PLANNOTATOR_PUBLIC_PORT).toBe("off");
+    expect(plan.environment.PLANNOTATOR_TEMPORARY_PORT).toBe("4398");
     expect(plan.environment.PLANNOTATOR_REVIEWS_DIR).toBeUndefined();
     expect(plan.environment.HOME).toBeUndefined();
     expect(renderPlist(plan)).toContain("<string>https://a.example?x=1&amp;y=&lt;2&gt;</string>");
