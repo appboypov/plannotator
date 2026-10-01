@@ -4,7 +4,18 @@
  */
 import { homedir } from "node:os";
 import {
+  DEFAULT_PUBLIC_HOST,
+  DEFAULT_PUBLIC_PEER,
+  PUBLIC_HOST_ENV,
+  PUBLIC_PEER_ENV,
+  PUBLIC_PORT_ENV,
+  TEMPORARY_ORIGIN_ENV,
+  TEMPORARY_PORT_ENV,
+} from "@plannotator/server/review-service";
+import { DEFAULT_TEMPORARY_ORIGIN } from "@plannotator/shared/review-api";
+import {
   CARRIED_SETTINGS,
+  carriedSettings,
   installBinary,
   installedPort,
   launchdState,
@@ -24,13 +35,30 @@ export const SERVICE_USAGE = [
   "",
   "The LaunchAgent nl.de-appspecialist.plannotator runs `plannotator serve`, keeps it alive and",
   "restarts it when it exits. Logs: ~/Library/Logs/plannotator/nl.de-appspecialist.plannotator.log.",
-  `install carries these settings from its environment into the plist when set: ${CARRIED_SETTINGS.join(", ")}.`,
+  "It runs the live doors: public on 100.111.186.85:4399 for 100.67.134.112, temporary on 127.0.0.1:4398.",
+  `install carries these settings from its environment into the plist when set, over the live ones: ${CARRIED_SETTINGS.join(", ")}.`,
+  "A door port of off installs the service without that door.",
   "",
   "Build and install from a fork checkout: bun fork/build-binary.ts && fork/dist/plannotator service install",
 ].join("\n");
 
 /** How long install waits for the restarted service to answer its health route. */
 const READY_TIMEOUT_MS = 20_000;
+
+/** The doors [environment] opens, as `plannotator serve` reads it. */
+function doorSummary(environment: Record<string, string | undefined>): string {
+  const publicPort = environment[PUBLIC_PORT_ENV];
+  const temporaryPort = environment[TEMPORARY_PORT_ENV];
+  const publicDoor =
+    publicPort !== undefined && publicPort !== "off"
+      ? `public ${environment[PUBLIC_HOST_ENV] ?? DEFAULT_PUBLIC_HOST}:${publicPort} for ${environment[PUBLIC_PEER_ENV] ?? DEFAULT_PUBLIC_PEER}`
+      : "public off";
+  const temporaryDoor =
+    temporaryPort !== undefined && temporaryPort !== "off"
+      ? `temporary 127.0.0.1:${temporaryPort} for ${environment[TEMPORARY_ORIGIN_ENV] ?? DEFAULT_TEMPORARY_ORIGIN}`
+      : "temporary off";
+  return `${publicDoor}, ${temporaryDoor}`;
+}
 
 export type ServiceHealth = { version: string; major: number | null; label: string | null };
 
@@ -96,8 +124,11 @@ async function install(plan: ServicePlan, domain: string, context: ServiceComman
   context.out(copied ? `Installed plannotator ${context.version} at ${plan.binary}` : `${plan.binary} is this binary (${context.version})`);
   const { replaced } = await loadService(plan, { domain, launchctl: context.launchctl });
   context.out(`${replaced ? "Restarted" : "Started"} ${plan.label}: ${plan.plistFile}`);
-  const carried = CARRIED_SETTINGS.filter((key) => plan.environment[key] !== undefined);
-  if (carried.length > 0) context.out(`Settings carried into the plist: ${carried.map((key) => `${key}=${plan.environment[key]}`).join(" ")}`);
+  const carried = carriedSettings(context.env, context.cwd);
+  if (Object.keys(carried).length > 0) {
+    context.out(`Settings carried from this shell: ${Object.entries(carried).map(([key, value]) => `${key}=${value}`).join(" ")}`);
+  }
+  context.out(`Doors: ${doorSummary(plan.environment)}`);
 
   // The old process can still answer while launchd stops it: wait for this build's answer.
   const health = await context.readHealth(plan.port, READY_TIMEOUT_MS, (seen) => seen.label === plan.label && seen.version === context.version);

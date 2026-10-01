@@ -16,7 +16,9 @@ The service listens on 127.0.0.1 and answers only this Mac (ADR 0004). A Review'
 - A door serves only what `door-manifest.ts` lists: `/plannotator/health` and the page routes of a Review whose Visibility is the door's, read at request time. Everything else, the review API and every WebSocket included, answers 404.
 - A door answers only its hostnames, rate-limits each visitor, forbids framing, and closes a Review's open requests when its Visibility changes away.
 - A door hands allowed requests to the service's own session route in-process, so pages behave the same through every door; the page's `api/plan` loses this Mac's paths on the way out.
-- The public door binds `100.111.186.85:4399` for peer `100.67.134.112` by default and retries a failed bind every 30 seconds.
+- The public door binds `100.111.186.85:4399` for peer `100.67.134.112` and retries a failed bind every 30 seconds.
+- The temporary door binds `127.0.0.1:4398` for peer `127.0.0.1` (ngrok's agent on this Mac) and answers only the host of `PLANNOTATOR_TEMPORARY_ORIGIN`, the origin of `temporary` links; its address and peer are not settings, so it can never face anything but loopback.
+- A door opens only when its port is set: the LaunchAgent sets the live ports; `plannotator serve` run by hand opens none, so a dev run never binds the Tailscale address or claims a live port.
 
 ## Consequences
 

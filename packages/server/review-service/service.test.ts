@@ -321,14 +321,30 @@ describe("service settings", () => {
     }
   });
 
-  test("the public door defaults to the live address and peer, takes the environment, and turns off", () => {
-    expect(resolveServiceSettings([], {})).toMatchObject({
+  test("run by hand, serve opens no door; a door opens when its port is set and closes with off", () => {
+    expect(resolveServiceSettings([], {})).toMatchObject({ ok: true, value: { publicDoor: null, temporaryPort: null } });
+    expect(resolveServiceSettings([], { PLANNOTATOR_PUBLIC_PORT: "4399" })).toMatchObject({
       ok: true,
       value: { publicDoor: { host: "100.111.186.85", port: 4399, peer: "100.67.134.112" } },
     });
-    const env = { PLANNOTATOR_PUBLIC_HOST: "127.0.0.1", PLANNOTATOR_PUBLIC_PORT: "4529", PLANNOTATOR_PUBLIC_PEER: "127.0.0.1" };
-    expect(resolveServiceSettings([], env)).toMatchObject({ ok: true, value: { publicDoor: { host: "127.0.0.1", port: 4529, peer: "127.0.0.1" } } });
-    expect(resolveServiceSettings([], { PLANNOTATOR_PUBLIC_PORT: "off" })).toMatchObject({ ok: true, value: { publicDoor: null } });
+    const env = { PLANNOTATOR_PUBLIC_HOST: "127.0.0.1", PLANNOTATOR_PUBLIC_PORT: "4529", PLANNOTATOR_PUBLIC_PEER: "127.0.0.1", PLANNOTATOR_TEMPORARY_PORT: "4528" };
+    expect(resolveServiceSettings([], env)).toMatchObject({
+      ok: true,
+      value: { publicDoor: { host: "127.0.0.1", port: 4529, peer: "127.0.0.1" }, temporaryPort: 4528 },
+    });
+    expect(resolveServiceSettings([], { PLANNOTATOR_PUBLIC_PORT: "off", PLANNOTATOR_TEMPORARY_PORT: "off" })).toMatchObject({
+      ok: true,
+      value: { publicDoor: null, temporaryPort: null },
+    });
     expect(resolveServiceSettings([], { PLANNOTATOR_PUBLIC_PORT: "43a" }).ok).toBe(false);
+    expect(resolveServiceSettings([], { PLANNOTATOR_TEMPORARY_PORT: "70000" }).ok).toBe(false);
+  });
+
+  test("temporary links use PLANNOTATOR_TEMPORARY_ORIGIN as a bare http(s) origin, else the fixed ngrok address", () => {
+    expect(resolveServiceSettings([], {})).toMatchObject({ ok: true, value: { temporaryOrigin: "https://knowledgeably-supersweet-kizzie.ngrok-free.dev" } });
+    expect(resolveServiceSettings([], { PLANNOTATOR_TEMPORARY_ORIGIN: "https://t.example/" })).toMatchObject({ ok: true, value: { temporaryOrigin: "https://t.example" } });
+    for (const origin of ["t.example", "ftp://t.example", "https://t.example/path", "https://t.example?x=1"]) {
+      expect([origin, resolveServiceSettings([], { PLANNOTATOR_TEMPORARY_ORIGIN: origin }).ok]).toEqual([origin, false]);
+    }
   });
 });

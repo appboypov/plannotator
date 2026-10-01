@@ -2,7 +2,8 @@
  * A door: a second listener that lets visitors from outside this Mac reach only the
  * Reviews whose Visibility is the door's, at the moment of each request (ADR 0007).
  * The public door binds the Tailscale address for the VPS (Caddy on
- * ctas.de-appspecialist.nl routes `/plannotator/*` to it). The rules are Lavish's:
+ * ctas.de-appspecialist.nl routes `/plannotator/*` to it); the temporary door binds
+ * 127.0.0.1 for ngrok's agent on this Mac. The rules are Lavish's:
  * - Only [peer] may connect: any other address is dropped before a byte is read.
  * - Only what `door-manifest.ts` lists passes; everything else, the review API and
  *   the listen socket included, answers 404, and every WebSocket upgrade is refused
