@@ -210,7 +210,7 @@ Connect a WebSocket to `/api/review/v1/listen?session=<omp session id>` on the l
 - `text`: the reviewer's words; `""` for an annotation without words, such as a deletion.
 - `anchor` (`RemarkAnchor`): `selector` is the annotated block's id (`""` for a global comment), `tag` the annotation kind lowercase (`comment`, `deletion`, `global_comment`), `text` the annotated excerpt. Each is `""` when the page sent none.
 
-An open Remark is replayed on every subscription that adds its Review until a Reply answers it, except to a connection that already received it.
+An open Remark reaches each listener session once: it is replayed on a subscription that adds its Review until a Reply answers it, except to a session that already received it, on this socket or an earlier one. The service stores which sessions received each Remark, so a reconnect under the same session id, even after a restart, does not bring it back; a new session id receives every open Remark of its subscription. A listener that must not lose a Remark hands it over before it acts on the next frame.
 
 `Notice`, stored and replayed until acknowledged:
 
@@ -247,9 +247,11 @@ plannotator serve [--port <n>]   # 127.0.0.1:4397; --port, else PLANNOTATOR_SERV
 ```
 
 - Each Review's state lives in its own folder, `<reviews dir>/<review_id>/review.json`. The reviews dir is `PLANNOTATOR_REVIEWS_DIR`, else `reviews` in Plannotator's data dir (`~/.plannotator/reviews`, moved by `PLANNOTATOR_DATA_DIR`). The service loads every folder when it starts, so ids and links survive restarts.
+- A Review's Remarks live next to it, in `<reviews dir>/<review_id>/remarks.json`: `{ "remarks": [ … ] }`, each a `Remark` with `at` (when it was stored), `status` (`open`, or `answered` once a Reply answers it) and `delivered_to` (the listener sessions it reached, in order).
 - A Review's id is the first 16 hex characters of the SHA-256 of the file's canonical path (symlinks resolved).
 - The page at `/plannotator/session/<review_id>/` is upstream's plan page: the service starts upstream's annotate server for the Review's document on first request, on a free loopback port, and forwards `/plannotator/session/<review_id>/<rest>` to `/<rest>` on it (ADR 0005). `GET /plannotator/session/<review_id>/api/plan` returns the document. A page that cannot start answers HTTP 502 `page failed to start: <reason>`.
-- Built so far: version, health, open, list, Visibility and the page. Not yet built, answering HTTP 404 `not found`: the listen socket, Cancel and Replies; open never ends or reopens a Round yet. Until they land, build clients of those routes against the stub below.
+- Send feedback (`POST /plannotator/session/<review_id>/api/feedback`, upstream's body) is the service's own: each entry of `annotations` becomes one Remark of the current Round (anchor `selector` from `blockId`, `tag` from `type`, `text` from `originalText`), stored before the answer `{ "ok": true }` and sent to the Review's listeners. The page's sent draft is cleared first; when that fails the answer is HTTP 502 and nothing is stored. The page server never sees it, so the reviewer can send feedback again.
+- Built so far: version, health, open, list, Visibility, the page, Remarks and the listen socket. Not yet built, answering HTTP 404 `not found`: Cancel and Replies; open never ends or reopens a Round yet, and no Finish notice exists yet. Until they land, build clients of those routes against the stub below.
 
 ## Stub server
 
