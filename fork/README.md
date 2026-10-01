@@ -37,9 +37,8 @@ Open a file without waiting, through the review API:
 
 ```sh
 curl -s -X POST http://127.0.0.1:4397/api/review/v1/reviews \
-  -H 'content-type: application/json' -d "{\"file\":\"$HOME/notes/plan.md\"}"
+  -H 'content-type: application/json' -d "{\"file\":\"$HOME/notes/plan.md\"}" | tee /dev/stderr | jq -r .link | xargs open
 # {"review_id":"…","link":"http://127.0.0.1:4397/plannotator/session/…/","status":"opened","round":1,"visibility":"local"}
-open "<link>"
 ```
 
 Opening the same file again gives the same link; when its Round has ended it starts the next Round there. End a Round from the agent side with `curl -s -X POST http://127.0.0.1:4397/api/review/v1/reviews/<review_id>/cancel`.
@@ -54,7 +53,7 @@ The service is one process with up to three listeners. Each serves a fixed set o
 | Public | `100.111.186.85:4399` (this Mac's Tailscale address) | Only `100.67.134.112`, the VPS, whose Caddy routes `https://ctas.de-appspecialist.nl/plannotator/*` to it. | Health and the pages of `public` Reviews. |
 | Temporary | `127.0.0.1:4398` | Only `127.0.0.1`, the ngrok agent on this Mac (`ngrok http 4398 --url=https://knowledgeably-supersweet-kizzie.ngrok-free.dev`). | Health and the pages of `temporary` Reviews, for that one host. |
 
-The two doors answer 404 to the review API, the listen socket, every WebSocket and every page route outside their list (`packages/server/review-service/door-manifest.ts`), and to any Review whose Visibility is not theirs at the moment of the request. Each Review page also runs an upstream annotate server on a free loopback port that only the service talks to. `plannotator serve` run by hand opens no door; only the LaunchAgent opens them. Details: "The doors" in `docs/review-api.md`, `adr/0007-doors-serve-only-their-visibility.md`.
+The two doors answer 404 to the review API, the listen socket, every WebSocket and every page route outside their list (`packages/server/review-service/door-manifest.ts`), and to any Review whose Visibility is not theirs at the moment of the request. Each Review page also runs an upstream annotate server on a free loopback port that only the service talks to. A door opens only when its port setting is set: the LaunchAgent sets both, and `plannotator serve` run by hand in a shell without `PLANNOTATOR_PUBLIC_PORT` and `PLANNOTATOR_TEMPORARY_PORT` opens none. Details: "The doors" in `docs/review-api.md`, `adr/0007-doors-serve-only-their-visibility.md`.
 
 ## Visibility
 
@@ -88,9 +87,9 @@ The types are in `packages/shared/review-api/`. `plannotator annotate <file>` on
 | `PLANNOTATOR_REVIEWS_DIR` | `<data dir>/reviews` | One folder per Review. |
 | `PLANNOTATOR_DATA_DIR` | `~/.plannotator` | Plannotator's data folder. |
 | `PLANNOTATOR_PUBLIC_HOST` | `100.111.186.85` | The public door's address. |
-| `PLANNOTATOR_PUBLIC_PORT` | unset by hand, `4399` under launchd | The public door's port; unset or `off` opens no public door. |
+| `PLANNOTATOR_PUBLIC_PORT` | unset (`4399` in the plist) | The public door's port; unset or `off` opens no public door. |
 | `PLANNOTATOR_PUBLIC_PEER` | `100.67.134.112` | The one address the public door accepts. |
-| `PLANNOTATOR_TEMPORARY_PORT` | unset by hand, `4398` under launchd | The temporary door's port on 127.0.0.1; unset or `off` opens no temporary door. |
+| `PLANNOTATOR_TEMPORARY_PORT` | unset (`4398` in the plist) | The temporary door's port on 127.0.0.1; unset or `off` opens no temporary door. |
 | `PLANNOTATOR_TEMPORARY_ORIGIN` | `https://knowledgeably-supersweet-kizzie.ngrok-free.dev` | The origin of `temporary` links and the one host the temporary door answers. |
 | `PLANNOTATOR_SERVICE_LABEL` | set by the plist | The LaunchAgent label health reports; not carried. |
 
@@ -109,7 +108,7 @@ Logs: `~/Library/Logs/plannotator/nl.de-appspecialist.plannotator.log`. The plis
 
 ## Development
 
-Review state lives in `~/.plannotator/reviews/<review_id>/`; a dev run keeps its own folder and port and opens no door. After `bun run build:review && bun run build:hook`:
+Review state lives in `~/.plannotator/reviews/<review_id>/`; a dev run keeps its own folder and port, and opens no door as long as its shell leaves the door port settings unset. After `bun run build:review && bun run build:hook`:
 
 ```sh
 PLANNOTATOR_REVIEWS_DIR=/tmp/pn-reviews bun apps/hook/server/index.ts serve --port 4497
