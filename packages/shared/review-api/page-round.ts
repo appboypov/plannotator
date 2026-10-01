@@ -32,16 +32,17 @@ const COMMANDS: readonly Command[] = ["feedback", "approve", "exit"];
 
 /**
  * Installs the Round module when the page lives under a session path; [close] shows a
- * closure, at most once per page. Returns false, installing nothing, outside one.
+ * closure: an ended Round at most once, then a later Round at most once, which replaces
+ * it. Returns false, installing nothing, outside one.
  */
 export function installReviewPageRound(globals: PageRoundGlobals, close: (closure: PageClosure) => void): boolean {
   const base = reviewPageBase(globals.location.pathname);
   if (base === null) return false;
 
-  let shown = false;
+  let shown: PageClosure["kind"] | null = null;
   const show = (closure: PageClosure) => {
-    if (shown) return;
-    shown = true;
+    if (shown === "next-round" || shown === closure.kind) return;
+    shown = closure.kind;
     close(closure);
   };
   // The Round the page was loaded in, pinned by its HTML so a reconnecting stream cannot move it.

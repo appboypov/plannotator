@@ -223,7 +223,7 @@ The service SHALL store an agent's Reply in the Review's folder, SHALL mark each
 
 ### Requirement: Replies and Round state show on the page
 
-A Review page SHALL list, in its annotation panel, the Remarks the reviewer sent in every Round, read-only and apart from the draft, each with the agents' Replies under it; SHALL never send a listed Remark again; and SHALL show the Round number when its Round is finished, cancelled, or replaced by a later Round, and a page from an earlier Round SHALL NOT act on the current one.
+A Review page SHALL list, in its annotation panel, the Remarks the reviewer sent in every Round, read-only and apart from the draft, each with the agents' Replies under it; SHALL never send a listed Remark again; and SHALL show the Round number when its Round is finished, cancelled, or replaced by a later Round, and a page from an earlier Round SHALL NOT act on the current one. A page covered because its Round ended SHALL replace that cover when a later Round opens.
 
 #### Scenario: A Reply shows under the Remark it answers
 
@@ -251,6 +251,19 @@ A Review page SHALL list, in its annotation panel, the Remarks the reviewer sent
 - **WHEN** the agent reopens the Review into round 2 and the tab sends feedback
 - **THEN** the service answers 409 `stale-round` and stores nothing
 - **AND** the tab is covered with "Round 2 is open" and offers a reload
+
+#### Scenario: An agent's Cancel covers the open page
+
+- **GIVEN** a Review page open in round 1
+- **WHEN** the agent cancels the Review
+- **THEN** the page is covered with "Round 1 was cancelled" without a reload
+- **AND** after a reload it is still covered with "Round 1 was cancelled"
+
+#### Scenario: An ended Round's cover gives way to the next Round
+
+- **GIVEN** a tab covered with "Round 1 was cancelled"
+- **WHEN** the agent reopens the Review into round 2
+- **THEN** the tab's one cover reads "Round 2 is open" and offers a reload
 
 ### Requirement: The service runs under launchd
 

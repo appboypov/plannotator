@@ -89,6 +89,18 @@ describe("installReviewPageRound", () => {
     expect(stale.closures).toEqual([{ kind: "next-round", round: 3 }]);
   });
 
+  test("an ended Round's closure gives way to a later Round, and nothing after that", async () => {
+    const stale = page(BASE, undefined, "1");
+    await stale.push(1, "cancelled");
+    await stale.push(1, "cancelled");
+    await stale.push(2, "open");
+    await stale.push(3, "open");
+    expect(stale.closures).toEqual([
+      { kind: "ended", state: "cancelled", round: 1 },
+      { kind: "next-round", round: 2 },
+    ]);
+  });
+
   test("the Round pinned in the page's HTML wins over the stream's first event", async () => {
     const pinned = page(BASE, undefined, "1");
     await pinned.globals.fetch(`${BASE}api/approve`, { method: "POST", body: "{}" });
