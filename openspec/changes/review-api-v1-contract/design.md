@@ -24,7 +24,7 @@ Story 2 of `epic-plannotator-service` writes the review API v1 contract so the s
 - **Remark anchor for Markdown.** `selector` = annotated block id (`""` for a global comment), `tag` = annotation kind lowercase (`comment`, `deletion`, `global_comment`, from `AnnotationType`), `text` = the selected excerpt; Remark `text` = the comment, `""` for a deletion.
 - **Open needs an absolute path.** Lavish resolves a relative path against the server's cwd; a launchd service has no meaningful cwd, so the contract refuses a relative `file` with 400 `file must be an absolute path` (the plugin and CLI send absolute paths).
 - **Module placement (ADR 0003).** Fork-owned folder `packages/shared/review-api/` (types, version, routes, parse, index) exported as `@plannotator/shared/review-api` through one line in `packages/shared/package.json`; the stub in the fork-owned folder `packages/server/review-api/` so `bun run typecheck` (shared and server tsconfigs) covers both. `fork/` is outside every tsconfig.
-- **Parsers are part of the contract.** `parse.ts` holds the request and listen-message checks and the error texts (`ERRORS`), so the stub and the service refuse with the same words. Unit tests cover them.
+- **Parsers are part of the contract.** `parse.ts` holds the request and listen-message checks and the error texts (`ERRORS`), so the stub and the service refuse with the same words. Unit tests cover them. It also holds `isLocalRequest`, Lavish's Host and Origin rule (403 `forbidden`), so the stub already refuses what the service will (local review finding).
 - **Instrumentation.** The stub logs one start line to stderr, like upstream's CLI; no logging facade exists in the fork yet.
 
 ## Risks / Trade-offs

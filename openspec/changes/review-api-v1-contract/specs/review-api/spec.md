@@ -67,6 +67,14 @@ The listen socket at `/api/review/v1/listen?session=<id>` SHALL take `subscribe`
 - **WHEN** another socket connects as session `s1`
 - **THEN** the first socket closes with code 1000
 
+### Requirement: Only this Mac reaches the review API
+The local service SHALL answer only requests whose Host is `127.0.0.1` or `localhost` on its port, and SHALL refuse a `POST` or listen handshake carrying a foreign `Origin` or `Referer`, with HTTP 403 `{ "error": "forbidden" }`. A header-less local client SHALL pass.
+
+#### Scenario: A foreign Origin cannot open a Review
+- **GIVEN** the stub runs on 127.0.0.1
+- **WHEN** a browser page on another origin posts an open request
+- **THEN** the answer is HTTP 403 `{ "error": "forbidden" }` and no Review is created
+
 ### Requirement: A stub answers the contract
 The repository SHALL hold a Bun stub server that answers every route and listen message of the contract with contract-valid placeholder data, and SHALL document how to run it.
 

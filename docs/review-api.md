@@ -26,9 +26,9 @@ The types live in `packages/shared/review-api/` (import `@plannotator/shared/rev
 | `GET` | `/plannotator/health` | none | `HealthResponse` |
 | `GET` | `/plannotator/session/:review_id/` | none | the Review page (HTML) |
 
-Every refused request answers JSON `ErrorResponse` (`{ "error": "…" }`), except a Reply naming unknown Remarks (`UnknownRemarksResponse`) and the listen handshake, which answers plain text. Malformed JSON gets HTTP 400. An unknown `review_id` gets HTTP 404 `{ "error": "review not found" }`. The error texts are `ERRORS` in `parse.ts`.
+Every refused request answers JSON `ErrorResponse` (`{ "error": "…" }`), except a Reply naming unknown Remarks (`UnknownRemarksResponse`) and the listen handshake's 400 `session required`, which is plain text. Malformed JSON gets HTTP 400. An unknown `review_id` gets HTTP 404 `{ "error": "review not found" }`. The error texts are `ERRORS` in `parse.ts`.
 
-As in Lavish, the service answers only its own hosts (`127.0.0.1`, `localhost`) and refuses others with HTTP 403; a `POST` or listen handshake with a present foreign `Origin` or `Referer` gets HTTP 403. Header-less local clients, such as the plugin and the CLI, may call every route.
+As in Lavish, the service answers only its own hosts (`127.0.0.1`, `localhost`, on its port) and refuses others with HTTP 403 `{ "error": "forbidden" }`; a `POST` or listen handshake with a present foreign `Origin` or `Referer` gets the same 403. Header-less local clients, such as the plugin and the CLI, may call every route. The check is `isLocalRequest` in `parse.ts`; the public and temporary doors (stories 1.10, 1.11) have their own rules.
 
 The review API lives at the site root and the page under `/plannotator/`, so the public door on ctas (`/plannotator/*`) never exposes the API.
 
@@ -246,4 +246,4 @@ The server pings every 30 seconds and drops a listener that did not answer the p
 bun packages/server/review-api/stub.ts [port]   # default 4397 on 127.0.0.1
 ```
 
-Reviews live in memory. No page Remark ever arrives, so a Reply may answer no Remark, an `ack` names no notice, and the page is a placeholder. It checks neither Host nor Origin. The service replaces it.
+Reviews live in memory. No page Remark ever arrives, so a Reply may answer no Remark, an `ack` names no notice, and the page is a placeholder. It applies the Host and Origin rule above (`isLocalRequest` in `parse.ts`). The service replaces it.

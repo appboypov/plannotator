@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import {
   ERRORS,
+  isLocalRequest,
   parseListenClientMessage,
   parseListReviewsQuery,
   parseOpenReviewRequest,
@@ -90,6 +91,29 @@ describe("listen client message", () => {
     expect(parseListenClientMessage('{"type":"ack"}')).toEqual({ ok: false, error: ERRORS.ackId });
     expect(parseListenClientMessage('{"type":"poll"}')).toEqual({ ok: false, error: ERRORS.message });
     expect(parseListenClientMessage("subscribe")).toEqual({ ok: false, error: ERRORS.message });
+  });
+});
+
+describe("local request", () => {
+  const local = { host: "127.0.0.1:4397", origin: null, referer: null };
+
+  test("lets a header-less local client through on either loopback name", () => {
+    expect(isLocalRequest(local, 4397, true)).toBe(true);
+    expect(isLocalRequest({ ...local, host: "localhost:4397" }, 4397, true)).toBe(true);
+  });
+
+  test("refuses a foreign Host, even when it names the right port", () => {
+    expect(isLocalRequest({ ...local, host: "evil.example:4397" }, 4397, false)).toBe(false);
+    expect(isLocalRequest({ ...local, host: "127.0.0.1:4398" }, 4397, false)).toBe(false);
+    expect(isLocalRequest({ ...local, host: null }, 4397, false)).toBe(false);
+  });
+
+  test("refuses a foreign Origin or Referer only where origins are checked", () => {
+    const foreign = { ...local, origin: "https://evil.example" };
+    expect(isLocalRequest(foreign, 4397, true)).toBe(false);
+    expect(isLocalRequest(foreign, 4397, false)).toBe(true);
+    expect(isLocalRequest({ ...local, referer: "https://evil.example/page" }, 4397, true)).toBe(false);
+    expect(isLocalRequest({ ...local, referer: "http://127.0.0.1:4397/plannotator/session/x/" }, 4397, true)).toBe(true);
   });
 });
 

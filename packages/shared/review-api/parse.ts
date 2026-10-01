@@ -29,6 +29,7 @@ export const ERRORS = {
   message: "expected a JSON subscribe or ack message",
   subscription: 'reviews must be "all" or an array of Review ids',
   ackId: "ack needs a notice id",
+  forbidden: "forbidden",
 } as const;
 
 const REVIEW_ID = /^[0-9a-f]{16}$/;
@@ -36,6 +37,29 @@ const REVIEW_ID = /^[0-9a-f]{16}$/;
 /** Whether [value] has a Review id's form (16 lowercase hex characters). */
 export function isReviewId(value: string): boolean {
   return REVIEW_ID.test(value);
+}
+
+/** The headers that decide whether a request comes from this Mac. */
+export type RequestOrigin = { host: string | null; origin: string | null; referer: string | null };
+
+/**
+ * Whether a request may reach the local service on [port]: its Host is `127.0.0.1` or
+ * `localhost` on that port, and, when [checkOrigin] (a `POST` or the listen handshake), a
+ * present Origin or Referer is one of those same origins. A header-less client passes.
+ * Anything else answers HTTP 403 `forbidden`.
+ */
+export function isLocalRequest(request: RequestOrigin, port: number, checkOrigin: boolean): boolean {
+  const origins = [`http://127.0.0.1:${port}`, `http://localhost:${port}`];
+  if (!origins.some((origin) => origin === `http://${request.host}`)) return false;
+  if (!checkOrigin) return true;
+  return [request.origin, request.referer].every((value) => {
+    if (value === null) return true;
+    try {
+      return origins.includes(new URL(value).origin);
+    } catch {
+      return false;
+    }
+  });
 }
 
 /** [value] as a Visibility, or undefined when it is not one. */

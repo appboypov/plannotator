@@ -21,6 +21,7 @@ import {
   SESSION_PATH_PREFIX,
   VERSION_PATH,
   parseListReviewsQuery,
+  isLocalRequest,
   parseListenClientMessage,
   parseListenSession,
   parseOpenReviewRequest,
@@ -75,6 +76,14 @@ export function startReviewApiStub(options: ReviewApiStubOptions = {}): Server<L
     const { pathname } = url;
     const method = request.method;
 
+    const headers = request.headers;
+    const fromThisMac = isLocalRequest(
+      { host: headers.get("host"), origin: headers.get("origin"), referer: headers.get("referer") },
+      server.port ?? 0,
+      method === "POST" || pathname === LISTEN_PATH,
+    );
+    if (!fromThisMac) return error(403, ERRORS.forbidden);
+
     if (method === "GET" && pathname === VERSION_PATH) return Response.json(API_VERSION);
     if (method === "GET" && pathname === HEALTH_PATH) {
       return Response.json({ ok: true, app: "plannotator", version: "review-api-stub", api: API_VERSION } satisfies HealthResponse);
@@ -101,7 +110,8 @@ export function startReviewApiStub(options: ReviewApiStubOptions = {}): Server<L
     if (method === "GET" && pathname.startsWith(SESSION_PATH_PREFIX)) {
       const review = reviews.get(pathname.slice(SESSION_PATH_PREFIX.length).split("/")[0]);
       if (review) {
-        return new Response(`<!doctype html><title>Plannotator stub</title><p>Review ${review.review_id}, round ${review.round}: ${review.file}</p>\n`, {
+        const file = review.file.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;");
+        return new Response(`<!doctype html><title>Plannotator stub</title><p>Review ${review.review_id}, round ${review.round}: ${file}</p>\n`, {
           headers: { "content-type": "text/html; charset=utf-8" },
         });
       }
