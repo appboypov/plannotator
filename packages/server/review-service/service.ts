@@ -277,12 +277,15 @@ export async function startReviewService(options: ReviewServiceOptions): Promise
     const roundQuery = url.searchParams.get("round");
     const round = parsePageRound(command === "exit" ? (roundQuery === null ? undefined : Number(roundQuery)) : field(body, "round"));
     if (!round.ok) return error(400, round.error);
-    const refused = roundRefusal(review, round.value);
+    // Read again after the body arrived, before anything is cleared: a Round that ended or
+    // moved on while the body was in flight refuses the command and keeps its draft.
+    const arrived = store.get(review.review_id) ?? review;
+    const refused = roundRefusal(arrived, round.value);
     if (refused) return Response.json(refused satisfies RoundRefusal, { status: 409 });
 
     const generation = command === "exit" ? url.searchParams.get("generation") : field(body, "draftGeneration");
     const search = typeof generation === "number" || typeof generation === "string" ? `?generation=${generation}` : "";
-    const cleared = await page(new Request(request.url, { method: "DELETE" }), review, DRAFT_PATH, search);
+    const cleared = await page(new Request(request.url, { method: "DELETE" }), arrived, DRAFT_PATH, search);
     if (!cleared.ok) {
       log(`could not clear the sent draft of Review ${review.review_id}: HTTP ${cleared.status}`);
       return error(502, `${command} not stored: the page could not clear its draft`);
