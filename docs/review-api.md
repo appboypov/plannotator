@@ -29,7 +29,7 @@ The types live in `packages/shared/review-api/` (import `@plannotator/shared/rev
 
 Every refused request answers JSON `ErrorResponse` (`{ "error": "…" }`), except a Reply naming unknown Remarks (`UnknownRemarksResponse`) and the listen handshake's 400 `session required`, which is plain text. Malformed JSON gets HTTP 400. An unknown `review_id` gets HTTP 404 `{ "error": "review not found" }`. The error texts are `ERRORS` in `parse.ts`.
 
-As in Lavish, the service answers only its own hosts (`127.0.0.1`, `localhost`, on its port) and refuses others with HTTP 403 `{ "error": "forbidden" }`; a `POST` or listen handshake with a present foreign `Origin` or `Referer` gets the same 403. Header-less local clients, such as the plugin and the CLI, may call every route. The check is `isLocalRequest` in `parse.ts`; the public and temporary doors (stories 1.10, 1.11) have their own rules.
+As in Lavish, the service answers only its own hosts (`127.0.0.1`, `localhost`, on its port) and refuses others with HTTP 403 `{ "error": "forbidden" }`; a `POST` or listen handshake with a present foreign `Origin` or `Referer` gets the same 403. Header-less local clients, such as the plugin and the CLI, may call every route. The check is `isLocalRequest` in `parse.ts`; the doors (see "The doors") have their own rules.
 
 The review API lives at the site root and the page under `/plannotator/`, so the public door on ctas (`/plannotator/*`) never exposes the API.
 
@@ -276,6 +276,20 @@ Replies to the client's own messages:
 ### Liveness
 
 The server pings every 30 seconds and drops a listener that did not answer the previous ping. While a listener's subscription includes a Review, its page shows the agent as listening.
+
+## The doors
+
+A door is a second listener that lets clients elsewhere open the pages of Reviews with its Visibility, and nothing else (ADR 0007, `packages/server/review-service/doors.ts`).
+
+- **The public door** serves `public` Reviews for `https://ctas.de-appspecialist.nl`, where Caddy on the VPS routes `/plannotator/*` over Tailscale to it. It binds `PLANNOTATOR_PUBLIC_HOST`:`PLANNOTATOR_PUBLIC_PORT` (default `100.111.186.85:4399`; `PLANNOTATOR_PUBLIC_PORT=off` starts none) and accepts only `PLANNOTATOR_PUBLIC_PEER` (default the VPS, `100.67.134.112`). A failed bind (Tailscale not up yet) is logged and retried every 30 seconds.
+- **Peer:** a socket from any other address is destroyed on connect, before a byte is read; each refused address is logged once per minute.
+- **Manifest** (`door-manifest.ts`): `GET|HEAD /plannotator/health` and, under `/plannotator/session/<review_id>`, the page itself (`""` redirects to `/`), `favicon.png`, `GET api/plan`, `api/plan/version`, `api/plan/versions`, `GET|POST|DELETE api/draft`, `POST api/feedback`, `api/approve`, `api/exit`, `GET api/review-round`, `api/review-replies` and `api/annotate/client-lease`. Everything else answers 404: the review API, the listen socket, the page's file, image, document, source-save, settings, AI and agent-terminal routes. Every WebSocket upgrade answers 404.
+- **Visibility per request:** a page route answers 404 unless the Review's Visibility is the door's at that moment. Changing a Review's Visibility away from the door's closes its open requests through the door, such as the Round stream.
+- **Hosts:** `Host` and the last `X-Forwarded-Host` must be `ctas.de-appspecialist.nl` or the door's own address; others answer 404.
+- **Rate limit:** 300 requests per visitor per minute, keyed on the last `X-Forwarded-For` entry (else the socket address); over it HTTP 429 with `Retry-After`.
+- **Framing:** every answer carries `content-security-policy: frame-ancestors 'none'` and `x-frame-options: DENY`.
+- **No local paths:** through a door, `api/plan` gives `filePath` and `sourceInfo` as the file name, drops `projectRoot`, `repoInfo` and `serverConfig.gitUser`, and turns off source save and the agent terminal.
+- The door answers allowed routes with the service's own handlers (health, page commands, Round stream, Replies, the page server), streamed unbuffered.
 
 ## The service
 
