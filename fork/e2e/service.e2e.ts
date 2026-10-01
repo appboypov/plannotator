@@ -238,9 +238,12 @@ describe("the installed review service", () => {
         await pageCommand(review.link, "approve", { feedback: "", annotations: [], codeAnnotations: [], round });
 
         const exitCode = await Promise.race([annotate.exited, Bun.sleep(20_000).then(() => "timeout" as const)]);
+        // A child that never exits keeps its streams open; stop it so they can be read.
+        if (exitCode === "timeout") annotate.kill();
         const stderr = await new Response(annotate.stderr).text();
-        expect(stderr).toContain(review.link);
+        if (exitCode === "timeout") throw new Error(`annotate did not exit within 20 s of the Approve; stderr:\n${stderr}`);
         expect(exitCode).toBe(0);
+        expect(stderr).toContain(review.link);
         expect(JSON.parse(await new Response(annotate.stdout).text())).toEqual({ decision: "approved" });
         expect((await reviewOf(file))?.state).toBe("finished");
       } finally {
