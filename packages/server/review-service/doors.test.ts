@@ -122,6 +122,15 @@ test("the public door serves public Reviews and their page only, without this Ma
   ]) {
     expect([path, (await fetch(`${door}${path}`)).status]).toEqual([path, 404]);
   }
+
+  // A local sibling's saved versions stay on this Mac: the version routes take no `path` or `base` through a door.
+  expect((await fetch(`${service!.url}/plannotator/session/${local.review_id}/api/plan`)).status).toBe(200);
+  const siblingThroughService = await fetch(`${service!.url}${page}api/plan/versions?path=local.md`);
+  expect(siblingThroughService.status).toBe(200);
+  expect((await fetch(`${door}${page}api/plan/versions`)).status).toBe(200);
+  for (const query of ["versions?path=local.md", `versions?path=${encodeURIComponent(join(dir, "local.md"))}`, "version?path=local.md&v=1", "version?v=1&base=/etc"]) {
+    expect([query, (await fetch(`${door}${page}api/plan/${query}`)).status]).toEqual([query, 404]);
+  }
   const refusedOpen = await fetch(`${door}/api/review/v1/reviews`, { method: "POST", body: JSON.stringify({ file: join(dir, "local.md") }) });
   expect(refusedOpen.status).toBe(404);
   const refusedCancel = await fetch(`${door}/api/review/v1/reviews/${shared.review_id}/cancel`, { method: "POST" });

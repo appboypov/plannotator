@@ -128,7 +128,7 @@ export function startDoor(options: DoorOptions): Door {
     }
     const method = req.method ?? "GET";
     const url = new URL(req.url ?? "/", "http://door");
-    const match = answersHost(req) ? matchDoorRequest(method, url.pathname) : null;
+    const match = answersHost(req) ? matchDoorRequest(method, url) : null;
     if (!match) return notFound(res);
     if (match.kind === "health") return send(res, options.health(), method);
     // Checked at request time: a Review made local a moment ago is not served.
@@ -259,7 +259,16 @@ async function send(res: ServerResponse, answer: Response, method: string): Prom
     for (;;) {
       const { value, done } = await reader.read();
       if (done || res.destroyed) break;
-      res.write(value);
+      // Wait for a slow visitor to take what was written, so the end is sent only once
+      // the body is nearly flushed, before a keep-alive timer can cut a buffered tail.
+      if (!res.write(value)) {
+        const drained = Promise.withResolvers<void>();
+        res.once("drain", drained.resolve);
+        res.once("close", drained.resolve);
+        await drained.promise;
+        res.off("drain", drained.resolve);
+        res.off("close", drained.resolve);
+      }
     }
   } catch {
     // The visitor left or the service closed the stream; nothing more to send.
