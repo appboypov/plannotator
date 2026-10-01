@@ -183,7 +183,7 @@ The Review page calls its API relative to its own path (`/plannotator/session/<r
 
 `StaleRoundResponse` when `round` is not the current Round; `EndedRoundResponse` when the current Round has ended, with `state` (`finished` or `cancelled`) and `ended_by` (`user` or `agent`). A `round` that is not a positive integer gets 400 `round must be a positive integer`. The page turns read-only on either 409.
 
-The page covers itself when its Round is over, from the Round stream or from a 409: `Round N is finished`, `Round N was cancelled`, or `Round N is open` with a button that reloads into the new Round. A reload of an ended Round shows the same cover. The tab that approves keeps upstream's completion screen.
+The page covers itself when its Round is over, from the Round stream or from a 409: `Round N is finished`, `Round N was cancelled`, or `Round N is open` with a button that reloads into the new Round. A reload of an ended Round shows the same cover. When the next Round opens, an ended Round's cover gives way to `Round N+1 is open`. The tab that approves keeps upstream's completion screen until the next Round opens.
 
 ## The page's Remarks and Replies
 

@@ -1,8 +1,8 @@
 /**
  * Fork: what a Review page shows once its Round is over for it (see
  * `@plannotator/shared/review-api/page-round`). A full-window cover over upstream's page
- * takes every click and key, so the page is closed for review; a later Round offers a
- * reload into it.
+ * takes every click and key, so the page is closed for review; a later Round replaces an
+ * ended Round's cover with one that offers a reload into it.
  */
 import type { PageClosure } from '@plannotator/shared/review-api/page-round';
 import type { EndedState } from '@plannotator/shared/review-api';
@@ -72,8 +72,15 @@ export function showReviewPageClosure(closure: PageClosure): void {
 
   cover.append(panel);
   // Keys stop at the document, so upstream's shortcuts cannot act on a closed page.
-  document.addEventListener('keydown', (event) => event.stopImmediatePropagation(), true);
-  document.body.append(cover);
+  document.addEventListener('keydown', stopKey, true);
+  const earlier = document.querySelector('[data-review-page-closure]');
+  if (earlier) earlier.replaceWith(cover);
+  else document.body.append(cover);
   cover.tabIndex = -1;
   cover.focus();
+}
+
+/** One listener for every cover: adding the same function again is a no-op. */
+function stopKey(event: KeyboardEvent): void {
+  event.stopImmediatePropagation();
 }
