@@ -113,6 +113,13 @@ export type Remark = {
   /** The reviewer's words; `""` for an annotation without words, such as a deletion. */
   text: string;
   anchor: RemarkAnchor;
+  /**
+   * Plannotator's addition: the page's whole Send feedback text this Remark came with,
+   * upstream's agent-facing markdown (with what is not a Remark, such as question answers,
+   * images and code annotations). Every Remark of one Send feedback carries the same text.
+   * Absent on Remarks stored without it.
+   */
+  feedback?: string;
 };
 
 /** An open Remark in a one-file list: a Remark and when it was stored. */
@@ -262,8 +269,14 @@ export type FinishNotice = {
   review_id: ReviewId;
   round: number;
   at: IsoTime;
-  /** The Approve's notes; `""` for an Approve without notes. */
+  /** The Approve's notes; `""` for an Approve without notes, and for a Close. */
   notes: string;
+  /**
+   * Plannotator's addition: `true` when the reviewer closed the page (Close) instead of
+   * approving, which upstream's annotate reports as `dismissed`. Absent on an Approve;
+   * Lavish clients ignore it.
+   */
+  dismissed?: true;
 };
 
 /** Server: an agent cancelled the Round. */

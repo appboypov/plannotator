@@ -6,6 +6,7 @@ export {
   PUBLIC_HOST_ENV,
   PUBLIC_PEER_ENV,
   PUBLIC_PORT_ENV,
+  resolveServicePort,
   resolveServiceSettings,
   REVIEWS_DIR_ENV,
   SERVICE_PORT_ENV,
