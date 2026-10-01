@@ -126,20 +126,23 @@ export type Reply = {
   at: IsoTime;
 };
 
-/** A Remark as its Review page shows it: when it was stored, whether answered, and its Replies. */
+/** Whether a Remark still waits for an answer: `answered` once a Reply names it. */
+export type RemarkStatus = "open" | "answered";
+
+/** A Remark as its Review page shows it: when it was stored, its status and the Replies that answer it. */
 export type PageRemark = Remark & {
   at: IsoTime;
-  status: "open" | "answered";
-  /** The Replies answering it, in order. */
+  status: RemarkStatus;
+  /** The Replies naming this Remark, in the order they were sent. */
   replies: Reply[];
 };
 
-/** `GET <link>api/review-replies`: every Remark of every Round with its Replies. */
+/** `GET /plannotator/session/:review_id/api/review-replies` on HTTP 200, open or ended. */
 export type ReviewRepliesResponse = {
   review_id: ReviewId;
-  /** Every Remark of all Rounds, in store order. */
+  /** Every Remark of every Round, in store order. */
   remarks: PageRemark[];
-  /** Replies naming no Remark. */
+  /** The Replies that name no Remark, in the order they were sent. */
   replies: Reply[];
 };
 

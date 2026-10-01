@@ -9,12 +9,12 @@ The fork's review API v1: version discovery, the Review routes, the listen socke
 The service SHALL answer `GET /api/review/version` with HTTP 200 and JSON `{ "major": <int>, "minor": <int> }`, at a path without a version, so a client can read any major and refuse one it does not support. This build SHALL answer major 1, minor 0.
 
 #### Scenario: A client reads the major
-- **GIVEN** the review API stub runs on 127.0.0.1
+- **GIVEN** the review service runs on 127.0.0.1
 - **WHEN** a client sends `GET /api/review/version`
 - **THEN** the answer is HTTP 200 with `{ "major": 1, "minor": 0 }`
 
 #### Scenario: A Lavish plugin client accepts the service
-- **GIVEN** the stub runs and the `omp-lavish-review` `ReviewApi` client points at it
+- **GIVEN** the service runs and the `omp-lavish-review` `ReviewApi` client points at it
 - **WHEN** the client runs its major check
 - **THEN** the check passes, because the major is 1 and the extra `minor` field is ignored
 
@@ -76,14 +76,6 @@ The listen socket at `/api/review/v1/listen?session=<id>` SHALL take `subscribe`
 The local service SHALL answer only requests whose Host is `127.0.0.1` or `localhost` on its port, and SHALL refuse a `POST` or listen handshake carrying a foreign `Origin` or `Referer`, with HTTP 403 `{ "error": "forbidden" }`. A header-less local client SHALL pass.
 
 #### Scenario: A foreign Origin cannot open a Review
-- **GIVEN** the stub runs on 127.0.0.1
+- **GIVEN** the review service runs on 127.0.0.1
 - **WHEN** a browser page on another origin posts an open request
 - **THEN** the answer is HTTP 403 `{ "error": "forbidden" }` and no Review is created
-
-### Requirement: A stub answers the contract
-The repository SHALL hold a Bun stub server that answers every route and listen message of the contract with contract-valid placeholder data, and SHALL document how to run it.
-
-#### Scenario: The stub starts and answers health
-- **GIVEN** the stub started with `bun packages/server/review-api/stub.ts <port>`
-- **WHEN** a client sends `GET /plannotator/health`
-- **THEN** the answer is HTTP 200 with `ok` true, `app` `plannotator` and the API version
