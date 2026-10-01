@@ -1468,6 +1468,7 @@ if (args[0] === "sessions") {
       isUrl: !!isUrl,
       folderPath,
       liveApp: !!liveAppResolved,
+      rawHtml: !!rawHtml,
       tailscale: tailscaleFlag,
       renderMarkdown: renderMarkdownFlag,
     })

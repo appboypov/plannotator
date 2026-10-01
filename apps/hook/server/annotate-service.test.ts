@@ -11,7 +11,7 @@ import { join } from "node:path";
 import type { OpenReviewResponse } from "@plannotator/shared/review-api";
 import { startAnnotateServer } from "@plannotator/server/annotate";
 import { startReviewService, type ReviewService } from "@plannotator/server/review-service";
-import { annotateThroughService, type ServiceAnnotateResult } from "./annotate-service";
+import { annotateThroughService, annotatesThroughService, type ServiceAnnotateResult } from "./annotate-service";
 
 let dir: string;
 let service: ReviewService | undefined;
@@ -253,5 +253,17 @@ describe("plannotator annotate through the review service", () => {
     expect(result.ok).toBe(false);
     expect(result.ok ? "" : result.error).toContain(`No Plannotator review service answers on http://127.0.0.1:${freePort}`);
     expect(result.ok ? "" : result.error).toContain("plannotator serve");
+  });
+});
+
+describe("which annotate targets go through the review service", () => {
+  const localFile = { isUrl: false, liveApp: false, rawHtml: false, tailscale: false, renderMarkdown: false };
+
+  test("a local Markdown file goes through the service", () => {
+    expect(annotatesThroughService(localFile)).toBe(true);
+  });
+
+  test("a local HTML file or --render-html keeps upstream's one-shot server, so its raw HTML view stays", () => {
+    expect(annotatesThroughService({ ...localFile, rawHtml: true })).toBe(false);
   });
 });
