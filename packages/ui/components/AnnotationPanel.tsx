@@ -6,6 +6,7 @@ import { MentionAutocompleteMenu, mentionActiveOptionId } from './MentionAutocom
 import { isCurrentUser } from '../utils/identity';
 import { ImageThumbnail } from './ImageThumbnail';
 import { EditorAnnotationCard } from './EditorAnnotationCard';
+import { SentRemarks } from './SentRemarks';
 import { useIsMobile } from '../hooks/useIsMobile';
 import { OverlayScrollArea } from './OverlayScrollArea';
 import { Button } from './ui/button';
@@ -646,6 +647,20 @@ export const AnnotationPanel: React.FC<PanelProps> = ({
 
           </>
         )}
+        <SentRemarks
+          renderCard={(annotation, { label, header }) => (
+            <AnnotationCard
+              annotation={annotation}
+              isSelected={false}
+              isMe={false}
+              onSelect={() => {}}
+              onDelete={() => {}}
+              readOnly
+              label={label}
+              header={header}
+            />
+          )}
+        />
         </div>
       </OverlayScrollArea>
 
@@ -925,7 +940,9 @@ const AnnotationCard: React.FC<{
   mentionSource?: MentionSource;
   /** The annotation has no live location in the document (host-reported). */
   unanchored?: boolean;
-}> = ({ annotation, isSelected, isMe, onSelect, onDelete, onEdit, readOnly = false, footer, header, mentionSource, unanchored = false }) => {
+  /** Replaces the type word in the header, such as `Reply` for an agent's answer. */
+  label?: string;
+}> = ({ annotation, isSelected, isMe, onSelect, onDelete, onEdit, readOnly = false, footer, header, mentionSource, unanchored = false, label }) => {
   const [isEditing, setIsEditing] = useState(false);
   const [editText, setEditText] = useState(annotation.text || '');
 
@@ -960,7 +977,7 @@ const AnnotationCard: React.FC<{
   };
 
   const typeColor = TYPE_COLOR[annotation.type] ?? 'text-muted-foreground';
-  const typeLabel = TYPE_LABEL[annotation.type] ?? 'Note';
+  const typeLabel = label ?? TYPE_LABEL[annotation.type] ?? 'Note';
   const isGlobal = annotation.type === AnnotationType.GLOBAL_COMMENT;
 
   // The edit box, mounted only while editing (see AnnotationEditComposer).
