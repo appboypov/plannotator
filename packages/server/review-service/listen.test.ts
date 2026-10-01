@@ -438,6 +438,42 @@ describe("Rounds, Approve, Cancel and list", () => {
       status: "pending",
     });
   });
+
+  test("a page command whose body arrives after the next Round opened is refused and keeps that Round's draft", async () => {
+    await start();
+    const review = await openReview("plan.md");
+    const body = JSON.stringify({ annotations: [COMMENT], round: 1 });
+    const { port } = new URL(service!.url);
+    const answered = Promise.withResolvers<string>();
+    let received = "";
+    const socket = await Bun.connect({
+      hostname: "127.0.0.1",
+      port: Number(port),
+      socket: {
+        data: (_socket, chunk) => {
+          received += chunk.toString();
+          if (received.includes("\r\n\r\n{")) answered.resolve(received);
+        },
+      },
+    });
+    socket.write(
+      `POST ${new URL(review.link).pathname}api/feedback HTTP/1.1\r\nHost: 127.0.0.1:${port}\r\nContent-Type: application/json\r\nContent-Length: ${body.length}\r\n\r\n`,
+    );
+    // The service exposes no signal for "headers routed, body awaited"; a real pause lets it
+    // route the request over the socket before the Round moves on, which is the race under test.
+    await Bun.sleep(50);
+    await post(`${service!.url}/api/review/v1/reviews/${review.review_id}/cancel`);
+    expect(await openFile(join(dir, "plan.md"))).toMatchObject({ round: 2 });
+    expect((await post(`${review.link}api/draft`, { annotations: [DELETION] })).status).toBe(200);
+
+    socket.write(body);
+    const answer = await answered.promise;
+    socket.end();
+    expect(answer).toStartWith("HTTP/1.1 409");
+    expect(answer).toContain('"status":"stale-round"');
+    expect(await (await fetch(`${review.link}api/draft`)).json()).toMatchObject({ annotations: [DELETION] });
+    expect((await list()).reviews[0].open_item_count).toBe(0);
+  });
 });
 
 describe("Replies on a Remark", () => {
