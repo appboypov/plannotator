@@ -13,6 +13,7 @@
     "./jj-core": "./jj-core.ts",
     "./gitbutler-core": "./gitbutler-core.ts",
     "./review-api": "./review-api/index.ts",
+    "./review-api/page-base": "./review-api/page-base.ts",
     "./review-core": "./review-core.ts",
     "./review-image": "./review-image.ts",
     "./review-progress": "./review-progress.ts",

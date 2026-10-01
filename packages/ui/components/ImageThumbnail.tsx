@@ -6,7 +6,7 @@ export type ImageSrcResolver = (path: string, base?: string) => string;
  * Default image URL resolver — Plannotator's local server behavior, verbatim.
  * Remote URLs pass through; local paths resolve through `/api/image`.
  */
-const defaultImageSrcResolver: ImageSrcResolver = (path, base) => {
+export const defaultImageSrcResolver: ImageSrcResolver = (path, base) => {
   if (path.startsWith('http://') || path.startsWith('https://')) {
     return path; // Remote URL, use directly
   }
