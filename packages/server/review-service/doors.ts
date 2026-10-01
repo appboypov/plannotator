@@ -136,6 +136,9 @@ export function startDoor(options: DoorOptions): Door {
 
     track(match.reviewId, res);
     const body = method === "GET" || method === "HEAD" ? undefined : await readBody(req);
+    // The body took time: a Review revoked meanwhile must not get the command.
+    if (res.destroyed) return;
+    if (options.visibilityOf(match.reviewId) !== visibility) return notFound(res);
     if (body === null) {
       res.writeHead(413, { ...FRAME_HEADERS, "content-type": "text/plain" });
       res.end("Payload Too Large\n");
