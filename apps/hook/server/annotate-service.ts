@@ -208,8 +208,9 @@ function waitForRound(
       return;
     }
     // The command exits right after this resolves, and an ack gets no answer. The
-    // service takes a socket's frames in order, so once it confirms this empty
-    // subscription it has taken the ack sent before it.
+    // service reads a socket's frames in order and marks an acked notice in memory as it
+    // reads the ack, then writes it to disk in its own process; so once it confirms this
+    // empty subscription, the ack stands whether or not this command is still running.
     const done = () => {
       clearTimeout(timer);
       ws.close(1000, "annotate done");
