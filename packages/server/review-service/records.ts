@@ -143,6 +143,10 @@ export class ReviewRecords {
       if (storedNotices) notices.set(reviewId, storedNotices);
       const storedReplies = await readList(join(dir, REPLIES_FILE), "replies", (value) => parseReply(value, reviewId), log);
       if (storedReplies) replies.set(reviewId, storedReplies);
+      // `addReply` writes the Replies before the Remarks; a stop between the two
+      // leaves a stored Reply whose Remarks still read open. The Replies win.
+      const answered = new Set((storedReplies ?? []).flatMap((reply) => reply.answers));
+      for (const remark of storedRemarks ?? []) if (answered.has(remark.id)) remark.status = "answered";
     }
     return new ReviewRecords(folder, remarks, notices, replies);
   }
@@ -204,17 +208,18 @@ export class ReviewRecords {
 
   /**
    * Appends [reply] to its Review's Replies and marks each Remark it answers
-   * `answered`, so no later subscription replays it; writes both files. The caller
-   * checked that every answered id is a Remark of the Review.
+   * `answered`, so no later subscription replays it. Writes the Replies first, then
+   * the Remarks: a stop between them is repaired on load, where stored Replies mark
+   * their Remarks answered. The caller checked that every answered id is a Remark of
+   * the Review.
    */
   async addReply(reply: Reply): Promise<void> {
     this.replies.set(reply.review_id, [...(this.replies.get(reply.review_id) ?? []), reply]);
     for (const remark of this.remarks.get(reply.review_id) ?? []) {
       if (reply.answers.includes(remark.id)) remark.status = "answered";
     }
-    const writes = [this.write(reply.review_id, REPLIES_FILE)];
-    if (reply.answers.length > 0) writes.push(this.write(reply.review_id, REMARKS_FILE));
-    await Promise.all(writes);
+    await this.write(reply.review_id, REPLIES_FILE);
+    if (reply.answers.length > 0) await this.write(reply.review_id, REMARKS_FILE);
   }
 
   /** What the Review's page shows: every Remark with the Replies that answer it, then the Replies that answer none. */

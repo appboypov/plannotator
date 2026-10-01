@@ -504,4 +504,23 @@ describe("Replies on a Remark", () => {
 
     expect((await post(`${service!.url}/api/review/v1/reviews/ffffffffffffffff/replies`, { text: "x" })).status).toBe(404);
   });
+
+  test("a Reply stored before its Remarks were rewritten still answers them after a restart", async () => {
+    await start();
+    const review = await openReview("plan.md");
+    await sendFeedback(review.link, [COMMENT]);
+    const [comment] = (await list(join(dir, "plan.md"))).reviews[0].open_items!;
+    await service!.stop();
+    // As if the service stopped after writing replies.json, before remarks.json.
+    const reply = { id: "rp_0123456789abcdef01234567", review_id: review.review_id, text: "Done.", answers: [comment.id], at: comment.at };
+    writeFileSync(join(reviewsDir, review.review_id, "replies.json"), JSON.stringify({ replies: [reply] }));
+
+    await start();
+    const listener = await listen("session-a");
+    expect((await subscribe(listener, "all")).map((frame) => frame.type)).toEqual(["subscribed"]);
+    expect((await pageReplies(`${service!.url}${new URL(review.link).pathname}`)).remarks[0]).toMatchObject({
+      status: "answered",
+      replies: [reply],
+    });
+  });
 });
