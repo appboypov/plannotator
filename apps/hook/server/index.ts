@@ -191,6 +191,7 @@ import {
 } from "./cli";
 import { exitOnUnknownSubcommand } from "./unknown-subcommand";
 import { completeAnnotateCommand } from "./annotate-command";
+import { runServeCommand } from "./serve-command"; // fork: review service
 import {
   annotateStartupFailureExitCode,
   isStrictAnnotateInvocation,
@@ -791,6 +792,14 @@ if (args[0] === "sessions") {
   }
   console.error(`\nReopen with: plannotator sessions --open [N]`);
   process.exit(0);
+
+} else if (args[0] === "serve") {
+  // Fork: the always-on review service (docs/review-api.md).
+  await runServeCommand({
+    args: args.slice(1),
+    version: getCliVersion() ?? "dev",
+    page: { htmlContent: planHtmlContent, origin: detectedOrigin, sharingEnabled, shareBaseUrl, pasteApiUrl },
+  });
 
 } else if (args[0] === "setup-goal") {
   // ============================================

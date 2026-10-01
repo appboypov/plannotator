@@ -238,6 +238,19 @@ Replies to the client's own messages:
 
 The server pings every 30 seconds and drops a listener that did not answer the previous ping. While a listener's subscription includes a Review, its page shows the agent as listening.
 
+## The service
+
+`plannotator serve` runs the service (`packages/server/review-service/`, `@plannotator/server/review-service`):
+
+```sh
+plannotator serve [--port <n>]   # 127.0.0.1:4397; --port, else PLANNOTATOR_SERVICE_PORT; 0 picks a free port
+```
+
+- Each Review's state lives in its own folder, `<reviews dir>/<review_id>/review.json`. The reviews dir is `PLANNOTATOR_REVIEWS_DIR`, else `reviews` in Plannotator's data dir (`~/.plannotator/reviews`, moved by `PLANNOTATOR_DATA_DIR`). The service loads every folder when it starts, so ids and links survive restarts.
+- A Review's id is the first 16 hex characters of the SHA-256 of the file's canonical path (symlinks resolved).
+- The page at `/plannotator/session/<review_id>/` is upstream's plan page: the service starts upstream's annotate server for the Review's document on first request, on a free loopback port, and forwards `/plannotator/session/<review_id>/<rest>` to `/<rest>` on it (ADR 0005). `GET /plannotator/session/<review_id>/api/plan` returns the document. A page that cannot start answers HTTP 502 `page failed to start: <reason>`.
+- Built so far: version, health, open, list, Visibility and the page. Not yet built, answering HTTP 404 `not found`: the listen socket, Cancel and Replies; open never ends or reopens a Round yet. Until they land, build clients of those routes against the stub below.
+
 ## Stub server
 
 `packages/server/review-api/stub.ts` answers every route above with contract-valid placeholder data, for building the plugin and the CLI before the service exists:
@@ -246,4 +259,4 @@ The server pings every 30 seconds and drops a listener that did not answer the p
 bun packages/server/review-api/stub.ts [port]   # default 4397 on 127.0.0.1
 ```
 
-Reviews, subscriptions and Cancel notices live in memory: a Cancel reaches every subscribed listener, a pending notice is replayed to a subscription that adds its Review until it is acknowledged, and the list reports each Review's listeners. No page exists, so no Remark, Finish, `page_open` or `listener` event ever arrives, a Reply may answer no Remark, and the page is a placeholder. It applies the Host and Origin rule above (`isLocalRequest` in `parse.ts`). The service replaces it.
+Reviews, subscriptions and Cancel notices live in memory: a Cancel reaches every subscribed listener, a pending notice is replayed to a subscription that adds its Review until it is acknowledged, and the list reports each Review's listeners. No page exists, so no Remark, Finish, `page_open` or `listener` event ever arrives, a Reply may answer no Remark, and the page is a placeholder. It applies the Host and Origin rule above (`isLocalRequest` in `parse.ts`). It stays until the service answers every route; the story that builds the last of listen, Cancel and Replies deletes it.

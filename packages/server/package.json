@@ -6,6 +6,7 @@
   "main": "index.ts",
   "types": "index.ts",
   "exports": {
+    "./review-service": "./review-service/index.ts",
     ".": "./index.ts",
     "./review": "./review.ts",
     "./annotate": "./annotate.ts",
