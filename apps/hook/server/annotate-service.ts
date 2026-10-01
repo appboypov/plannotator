@@ -241,16 +241,16 @@ function waitForRound(
     ws.send(JSON.stringify({ type: "ack", id: notice.id }));
     const sent = [...remarks.values()];
     if (notice.type === "cancel") {
-      if (sent.length > 0) settle({ ok: true, outcome: { feedback: formatRemarksFeedback(sent) } });
+      if (sent.length > 0) settle({ ok: true, outcome: { feedback: feedbackOf(sent) } });
       else settle({ ok: false, error: `Round ${review.round} of ${review.link} was cancelled by another agent.` });
       return;
     }
     if (notice.dismissed) {
-      settle({ ok: true, outcome: sent.length > 0 ? { feedback: formatRemarksFeedback(sent) } : { feedback: "", exit: true } });
+      settle({ ok: true, outcome: sent.length > 0 ? { feedback: feedbackOf(sent) } : { feedback: "", exit: true } });
       return;
     }
     // Feedback sent just before an Approve still reaches the agent, ahead of the notes.
-    const feedback = [sent.length > 0 ? formatRemarksFeedback(sent) : "", notice.notes].filter(Boolean).join("\n\n");
+    const feedback = [sent.length > 0 ? feedbackOf(sent) : "", notice.notes].filter(Boolean).join("\n\n");
     settle({ ok: true, outcome: { approved: true, feedback } });
   };
 
@@ -298,6 +298,17 @@ function waitForRound(
 
   connect();
   return promise;
+}
+
+/**
+ * What the reviewer sent, as upstream's annotate command printed it: the page's own
+ * feedback text of each Send feedback (every Remark of a send carries the same text),
+ * once each in order. Remarks stored without that text are formatted from their fields.
+ */
+export function feedbackOf(remarks: readonly Remark[]): string {
+  const texts = [...new Set(remarks.flatMap((remark) => (remark.feedback ? [remark.feedback] : [])))];
+  const bare = remarks.filter((remark) => !remark.feedback);
+  return [...texts, ...(bare.length > 0 ? [formatRemarksFeedback(bare)] : [])].join("\n\n");
 }
 
 /**

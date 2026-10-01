@@ -104,14 +104,23 @@ describe("plannotator annotate through the review service", () => {
     expect(await call.result).toEqual({ ok: true, outcome: { feedback: "", exit: true } });
   });
 
-  test("Send feedback prints annotated, ends the Round, and the next call opens the next Round without it", async () => {
+  test("Send feedback prints the page's feedback text as annotated, also for a send with no annotations", async () => {
+    await start();
+    // Question answers and code annotations reach the agent only through the page's text.
+    const pageText = "# File Feedback\n\n## Answers\n\n**Which release?** The next one.\n";
+    const call = annotate(document("plan.md"));
+    const review = await call.opened;
+    expect((await post(`${review.link}api/feedback`, { round: 1, feedback: pageText, annotations: [] })).status).toBe(200);
+    expect(await call.result).toEqual({ ok: true, outcome: { feedback: pageText } });
+  });
+
+  test("Send feedback without the page's text prints its Remarks formatted, ends the Round, and the next call opens the next Round without it", async () => {
     await start();
     const file = document("plan.md");
     const first = annotate(file);
     const review = await first.opened;
     const sent = await post(`${review.link}api/feedback`, {
       round: 1,
-      feedback: "ignored by the service",
       annotations: [
         { blockId: "block-1", type: "COMMENT", originalText: "First paragraph.", text: "Say who owns it." },
         { blockId: "block-0", type: "DELETION", originalText: "# plan.md", text: "" },

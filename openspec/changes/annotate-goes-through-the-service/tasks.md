@@ -2,6 +2,7 @@
 
 - [x] 1.1 Close's Finish notice carries `dismissed: true`; stored and replayed
 - [x] 1.2 `resolveServicePort` reads `PLANNOTATOR_SERVICE_PORT`, else 4397, refuses 0
+- [x] 1.3 Remarks carry the page's feedback text; a text-only send is one Remark
 
 ## 2. CLI
 

@@ -231,7 +231,7 @@ describe("Remarks wait for a listener", () => {
     expect((await list()).reviews[0].open_item_count).toBe(1);
   });
 
-  test("the reviewer can send again; empty feedback stores nothing; a sent draft is cleared", async () => {
+  test("the reviewer can send again; empty feedback stores nothing; text alone is one Remark; a sent draft is cleared", async () => {
     await start();
     const review = await openReview("plan.md");
     const saved = await fetch(`${review.link}api/draft`, {
@@ -244,10 +244,22 @@ describe("Remarks wait for a listener", () => {
     expect((await sendFeedback(review.link, [COMMENT])).status).toBe(200);
     expect((await fetch(`${review.link}api/draft`)).status).toBe(404);
 
-    expect((await sendFeedback(review.link, [])).status).toBe(200);
+    const empty = await fetch(`${review.link}api/feedback`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ feedback: "", annotations: [], codeAnnotations: [], draftGeneration: 1 }),
+    });
+    expect(empty.status).toBe(200);
     expect((await list()).reviews[0].open_item_count).toBe(1);
     expect((await sendFeedback(review.link, [DELETION])).status).toBe(200);
     expect((await list()).reviews[0].open_item_count).toBe(2);
+
+    // Only the page's text (question answers, code annotations): one Remark carries it.
+    expect((await sendFeedback(review.link, [])).status).toBe(200);
+    const items = (await list(join(dir, "plan.md"))).reviews[0].open_items;
+    expect(items).toHaveLength(3);
+    expect(items[2]).toMatchObject({ text: "# Annotations\n...", feedback: "# Annotations\n...", anchor: { selector: "", tag: "global_comment", text: "" } });
+    expect(items[1]).toMatchObject({ anchor: { tag: "deletion" }, feedback: "# Annotations\n..." });
   });
 
   test("overlapping listeners hear of each other and of a page load", async () => {

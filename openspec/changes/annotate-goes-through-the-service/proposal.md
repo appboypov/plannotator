@@ -9,6 +9,7 @@ Pressure test:
 - What if two calls review different files? Each opens its own Review and listens with its own session id, so both wait at once; nothing is queued.
 - What if the reviewer sends feedback? Upstream ended the call on Send feedback. The call takes the Remarks, cancels its Round so the page closes, and prints upstream's "annotated" markdown; the next call opens the next Round on the same link.
 - What if the reviewer closes the page instead of approving? Approve without notes and Close both left a Finish with empty notes, so the CLI could not tell them apart. Close's Finish now carries `dismissed: true`, an additive field Lavish clients ignore.
+- What if the reviewer sends question answers, images or code annotations? Remarks carry only annotations, so the page's whole feedback text would be lost. Each Remark now carries the page's text (`feedback`, additive), a send with text but no annotations is one Remark, and the call prints that text as upstream did.
 - What if old Remarks or a pending notice of an earlier Round replay? The call takes only records of the Round it opened.
 - What if the listen socket drops mid-Round? The call reconnects and the replay hands it the Round's records and its pending notice.
 - What if the command exits before the service took its ack? It waits for the confirmation of an empty subscribe sent after the ack; the service takes a socket's frames in order.
@@ -19,6 +20,7 @@ Pressure test:
 - No service: a clear error naming how to start it; exit 1, or 2 under a strict flag.
 - URLs, folders, `--markdown`, live apps and `--tailscale` keep upstream's one-shot server.
 - The service's Close Finish notice carries `dismissed: true`.
+- A Remark carries the page's Send feedback text (`feedback`); a send with text but no annotations stores one `global_comment` Remark.
 - `resolveServicePort` reads the shared port setting for clients of the service.
 
 ## Capabilities
@@ -29,7 +31,7 @@ Pressure test:
 
 ### Modified Capabilities
 
-- `review-service`: a Close's Finish notice is marked `dismissed`.
+- `review-service`: a Close's Finish notice is marked `dismissed`; Remarks carry the page's feedback text.
 
 ## Impact
 

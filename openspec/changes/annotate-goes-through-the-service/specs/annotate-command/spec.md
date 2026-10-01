@@ -20,7 +20,7 @@
 
 - **GIVEN** an annotate call waits on its Round
 - **WHEN** the reviewer sends feedback on the page
-- **THEN** the call cancels the Round and prints `annotated` with the Remarks as upstream's file feedback markdown
+- **THEN** the call cancels the Round and prints `annotated` with the page's feedback text
 - **AND** the next call on the file opens the next Round on the same link
 
 #### Scenario: Two files at once
