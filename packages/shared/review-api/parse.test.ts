@@ -52,6 +52,7 @@ describe("reply request", () => {
     expect(parseReplyRequest({ text: " \n" })).toEqual({ ok: false, error: ERRORS.replyText });
     expect(parseReplyRequest({ text: "ok", answers: "fi_a" })).toEqual({ ok: false, error: ERRORS.answers });
     expect(parseReplyRequest({ text: "ok", answers: [1] })).toEqual({ ok: false, error: ERRORS.answers });
+    expect(parseReplyRequest({ text: "ok", answers: null })).toEqual({ ok: false, error: ERRORS.answers });
   });
 });
 

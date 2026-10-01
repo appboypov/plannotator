@@ -74,7 +74,7 @@ export function parseReplyRequest(body: unknown): Parsed<Required<ReplyRequest>>
   const fields = record(body);
   const text = fields.text;
   if (typeof text !== "string" || !text.trim()) return refuse(ERRORS.replyText);
-  const answers = fields.answers ?? [];
+  const answers = fields.answers === undefined ? [] : fields.answers;
   if (!isStringArray(answers)) return refuse(ERRORS.answers);
   return { ok: true, value: { text, answers: [...new Set(answers)] } };
 }

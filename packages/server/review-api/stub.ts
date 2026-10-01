@@ -113,7 +113,7 @@ export function startReviewApiStub(options: ReviewApiStubOptions = {}): Server<L
     if (body === MALFORMED) return error(400, "malformed JSON");
     const parsed = parseOpenReviewRequest(body);
     if (!parsed.ok) return error(400, parsed.error);
-    const { file: requested, visibility } = parsed.value;
+    const { file: requested, visibility, reopen } = parsed.value;
     const found = await stat(requested).catch(() => undefined);
     if (!found?.isFile()) return error(404, `file not found: ${requested}`);
     const file = await realpath(requested);
@@ -127,17 +127,19 @@ export function startReviewApiStub(options: ReviewApiStubOptions = {}): Server<L
       state: "open",
       round_opened_at: new Date().toISOString(),
     };
-    if (existing && existing.state !== "open") {
+    // A finished Review reopens only with `reopen: true`; otherwise it answers `user-ended` and writes nothing.
+    const userEnded = existing?.state === "finished" && reopen !== true;
+    if (existing && !userEnded && existing.state !== "open") {
       review.round += 1;
       review.state = "open";
       review.round_opened_at = new Date().toISOString();
     }
-    if (existing && visibility) review.visibility = visibility;
+    if (existing && !userEnded && visibility) review.visibility = visibility;
     reviews.set(reviewId, review);
     return Response.json({
       review_id: reviewId,
       link: reviewLink(reviewId, review.visibility, origins),
-      status: "opened",
+      status: userEnded ? "user-ended" : "opened",
       round: review.round,
       visibility: review.visibility,
     } satisfies OpenReviewResponse);
