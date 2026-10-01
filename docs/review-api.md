@@ -25,6 +25,7 @@ The types live in `packages/shared/review-api/` (import `@plannotator/shared/rev
 | `GET` (WebSocket) | `/api/review/v1/listen?session=<omp session id>` | `ListenClientMessage` frames | `ListenServerMessage` frames |
 | `GET` | `/plannotator/health` | none | `HealthResponse` |
 | `GET` | `/plannotator/session/:review_id/` | none | the Review page (HTML) |
+| `GET` | `/plannotator/session/:review_id/api/review-replies` | none | `ReviewRepliesResponse` |
 
 Every refused request answers JSON `ErrorResponse` (`{ "error": "…" }`), except a Reply naming unknown Remarks (`UnknownRemarksResponse`) and the listen handshake's 400 `session required`, which is plain text. Malformed JSON gets HTTP 400. An unknown `review_id` gets HTTP 404 `{ "error": "review not found" }`. The error texts are `ERRORS` in `parse.ts`.
 
@@ -136,7 +137,7 @@ HTTP 200 with `ReplyResponse`:
 }
 ```
 
-`reply` (a `Reply`) is Plannotator's addition; Lavish clients ignore it. Each answered Remark stops being replayed; a Reply leaves every Remark it does not name open. A Reply on an ended Review is allowed. No listen event is sent for a Reply.
+`reply` (a `Reply`) is Plannotator's addition; Lavish clients ignore it. Each answered Remark stops being replayed; a Reply leaves every Remark it does not name open. A Reply on an ended Review is allowed. No listen event is sent for a Reply. The Reply is stored in the Review's folder and the Review page shows it (`<link>api/review-replies`, below).
 
 Errors, each writing nothing: blank or missing `text` 400 `reply text required`; `answers` not a string array 400 `answers must be an array of Feedback item ids`; any named id that is not a Remark of this Review 400 `UnknownRemarksResponse`:
 
@@ -181,6 +182,39 @@ The Review page calls its API relative to its own path (`/plannotator/session/<r
 ```
 
 `StaleRoundResponse` when `round` is not the current Round; `EndedRoundResponse` when the current Round has ended, with `state` (`finished` or `cancelled`) and `ended_by` (`user` or `agent`). A `round` that is not a positive integer gets 400 `round must be a positive integer`. The page turns read-only on either 409.
+
+## The page's Remarks and Replies
+
+`GET /plannotator/session/<review_id>/api/review-replies` (`PAGE_REPLIES_PATH`, relative to the page: `<link>api/review-replies`) answers the page, open or ended, with HTTP 200 and `ReviewRepliesResponse`: every Remark of every Round in store order, each with its `at`, `status` and the Replies that name it in the order they were sent, then the Replies that name no Remark:
+
+```json
+{
+  "review_id": "0123456789abcdef",
+  "remarks": [
+    {
+      "id": "fi_0123456789abcdef01234567",
+      "review_id": "0123456789abcdef",
+      "round": 1,
+      "text": "Tighten the heading.",
+      "anchor": { "selector": "block-3", "tag": "comment", "text": "Draft heading" },
+      "at": "2026-10-01T09:30:00.000Z",
+      "status": "answered",
+      "replies": [
+        {
+          "id": "rp_0123456789abcdef01234567",
+          "review_id": "0123456789abcdef",
+          "text": "Tightened the heading.",
+          "answers": ["fi_0123456789abcdef01234567"],
+          "at": "2026-10-01T09:40:00.000Z"
+        }
+      ]
+    }
+  ],
+  "replies": []
+}
+```
+
+A `PageRemark` is a `Remark` with `at`, `status` (`open` or `answered`) and `replies`. It is a page route like the Round stream: the service answers it, the page server never sees it, and it carries no listener data. An unknown `review_id` gets 404 `review not found`.
 
 ## Listen to Reviews
 
@@ -248,19 +282,10 @@ plannotator serve [--port <n>]   # 127.0.0.1:4397; --port, else PLANNOTATOR_SERV
 
 - Each Review's state lives in its own folder, `<reviews dir>/<review_id>/review.json`. The reviews dir is `PLANNOTATOR_REVIEWS_DIR`, else `reviews` in Plannotator's data dir (`~/.plannotator/reviews`, moved by `PLANNOTATOR_DATA_DIR`). The service loads every folder when it starts, so ids and links survive restarts.
 - A Review's Remarks live next to it, in `<reviews dir>/<review_id>/remarks.json`: `{ "remarks": [ … ] }`, each a `Remark` with `at` (when it was stored), `status` (`open`, or `answered` once a Reply answers it) and `delivered_to` (the listener sessions it reached, in order).
+- A Review's Replies live next to it, in `<reviews dir>/<review_id>/replies.json`: `{ "replies": [ … ] }`, each a `Reply`, in the order they were sent. A Reply naming Remarks marks them `answered` in `remarks.json`.
 - A Review's id is the first 16 hex characters of the SHA-256 of the file's canonical path (symlinks resolved).
 - The page at `/plannotator/session/<review_id>/` is upstream's plan page: the service starts upstream's annotate server for the Review's document on first request, on a free loopback port, and forwards `/plannotator/session/<review_id>/<rest>` to `/<rest>` on it (ADR 0005). `GET /plannotator/session/<review_id>/api/plan` returns the document. A page that cannot start answers HTTP 502 `page failed to start: <reason>`.
 - Send feedback (`POST /plannotator/session/<review_id>/api/feedback`, upstream's body) is the service's own: each entry of `annotations` becomes one Remark of the current Round (anchor `selector` from `blockId`, `tag` from `type`, `text` from `originalText`), stored before the answer `{ "ok": true }` and sent to the Review's listeners. The page's sent draft is cleared first; when that fails the answer is HTTP 502 and nothing is stored. The page server never sees it, so the reviewer can send feedback again.
 - A Review's notices live next to it, in `<reviews dir>/<review_id>/notices.json`: `{ "notices": [ … ] }`, each a Finish or Cancel `Notice` with `status` (`pending`, or `acknowledged` with `acknowledged_at` once a listener acks it). A pending notice is replayed to every subscription that adds its Review until it is acknowledged.
 - The page's Round-checked commands are answered by the service, not the upstream page server (ADR 0006): Send feedback (`api/feedback`) stores Remarks; Approve (`api/approve`) finishes the Round with a Finish notice whose `notes` are the page's `feedback` text (`""` without notes; its annotations are not Remarks); Close (`api/exit`) finishes it with empty notes. Each takes an optional `round` (body field; `?round=` for Close): not a positive integer answers 400 `round must be a positive integer`, an ended Round answers 409 `ended`, another Round answers 409 `stale-round`, and nothing is written. The page's own Round stream (`<link>api/review-round`, an event stream of `Round`) sends the Round on connect and whenever it ends or the next opens; the page's HTML pins the Round it was loaded in (`<meta name="plannotator-review-round">`), and the page sends that Round with each command and closes itself when the Round is over for it.
-- Built so far: everything but Replies: version, health, open (with `user-ended`, `reopen` and the next Round on the same link), list, Visibility, Cancel, the page, Remarks, notices and the listen socket. Not yet built, answering HTTP 404 `not found`: Replies. Until they land, build clients of that route against the stub below.
-
-## Stub server
-
-`packages/server/review-api/stub.ts` answers every route above with contract-valid placeholder data, for building the plugin and the CLI before the service exists:
-
-```sh
-bun packages/server/review-api/stub.ts [port]   # default 4397 on 127.0.0.1
-```
-
-Reviews, subscriptions and Cancel notices live in memory: a Cancel reaches every subscribed listener, a pending notice is replayed to a subscription that adds its Review until it is acknowledged, and the list reports each Review's listeners. No page exists, so no Remark, Finish, `page_open` or `listener` event ever arrives, a Reply may answer no Remark, and the page is a placeholder. It applies the Host and Origin rule above (`isLocalRequest` in `parse.ts`). It stays until the service answers every route; the story that builds the last of listen, Cancel and Replies deletes it.
+- Every route above is built.
