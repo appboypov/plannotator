@@ -25,6 +25,8 @@ export function reviewIdForFile(canonicalFile: string): ReviewId {
  * skipped at load with one log line and left on disk untouched.
  */
 export class ReviewStore {
+  private readonly writes = new Map<ReviewId, Promise<void>>();
+
   private constructor(
     readonly dir: string,
     private readonly reviews: Map<ReviewId, StoredReview>,
@@ -62,14 +64,25 @@ export class ReviewStore {
     return join(this.dir, reviewId);
   }
 
-  /** Records [review] in memory and replaces its `review.json` atomically. */
-  async save(review: StoredReview): Promise<void> {
-    this.reviews.set(review.review_id, review);
-    const folder = this.folder(review.review_id);
-    await mkdir(folder, { recursive: true });
-    const temporary = join(folder, `.${REVIEW_FILE}.${randomBytes(6).toString("hex")}.tmp`);
-    await writeFile(temporary, `${JSON.stringify(review, null, 2)}\n`);
-    await rename(temporary, join(folder, REVIEW_FILE));
+  /**
+   * Records [review] in memory at once, then replaces its `review.json` atomically.
+   * Writes of one Review run one after another and each writes the latest state, so an
+   * older save never lands over a newer one.
+   */
+  save(review: StoredReview): Promise<void> {
+    const reviewId = review.review_id;
+    this.reviews.set(reviewId, review);
+    const previous = this.writes.get(reviewId) ?? Promise.resolve();
+    const next = previous.then(async () => {
+      const folder = this.folder(reviewId);
+      await mkdir(folder, { recursive: true });
+      const temporary = join(folder, `.${REVIEW_FILE}.${randomBytes(6).toString("hex")}.tmp`);
+      await writeFile(temporary, `${JSON.stringify(this.reviews.get(reviewId), null, 2)}\n`);
+      await rename(temporary, join(folder, REVIEW_FILE));
+    });
+    // A failed write must not stop the next one; the caller of this one sees the failure.
+    this.writes.set(reviewId, next.catch(() => {}));
+    return next;
   }
 }
 

@@ -54,6 +54,19 @@ export class ReviewPages {
     return new Response(answer.body, { status: answer.status, statusText: answer.statusText, headers: answer.headers });
   }
 
+  /**
+   * Stops [reviewId]'s page, if one started, so its next request starts it again with
+   * the document as it is then (a new Round). Upstream's stop also closes the process's
+   * file-browser watchers; open pages' streams reconnect.
+   */
+  async stop(reviewId: ReviewId): Promise<void> {
+    const starting = this.pages.get(reviewId);
+    if (!starting) return;
+    this.pages.delete(reviewId);
+    const page = await starting.catch(() => undefined);
+    page?.stop();
+  }
+
   /** Stops every page that started. */
   async stopAll(): Promise<void> {
     const starting = [...this.pages.values()];

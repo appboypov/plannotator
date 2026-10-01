@@ -1,8 +1,9 @@
 /**
- * Remarks and the listen socket against the real service: Send feedback stores one
- * Remark per annotation, a listener that connects later receives them, a session
- * receives each Remark once (across reconnects and restarts), and the socket's
- * handshake and frame rules.
+ * Remarks, Rounds and the listen socket against the real service: Send feedback stores
+ * one Remark per annotation, a listener that connects later receives them, a session
+ * receives each Remark once (across reconnects and restarts), the socket's handshake
+ * and frame rules; Approve, Close and Cancel end a Round with a notice, open starts the
+ * next one, and a page command for a Round that is not open is refused.
  */
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
@@ -40,11 +41,49 @@ async function start(): Promise<ReviewService> {
 async function openReview(name: string): Promise<OpenReviewResponse> {
   const file = join(dir, name);
   writeFileSync(file, `# ${name}\n\nFirst paragraph.\n`);
+  return openFile(realpathSync(file));
+}
+
+async function openFile(file: string, extra: Record<string, unknown> = {}): Promise<OpenReviewResponse> {
   const answer = await fetch(`${service!.url}/api/review/v1/reviews`, {
     method: "POST",
-    body: JSON.stringify({ file: realpathSync(file) }),
+    body: JSON.stringify({ file, ...extra }),
   });
   return (await answer.json()) as OpenReviewResponse;
+}
+
+async function post(url: string, body?: unknown): Promise<Response> {
+  return fetch(url, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: body === undefined ? undefined : JSON.stringify(body),
+  });
+}
+
+/** The first [count] events of a page's Round stream. */
+async function roundEvents(link: string, count: number, during: () => Promise<unknown> = async () => {}): Promise<unknown[]> {
+  const answer = await fetch(`${link}api/review-round`);
+  expect(answer.headers.get("content-type")).toBe("text/event-stream");
+  const reader = answer.body!.getReader();
+  const events: unknown[] = [];
+  let buffered = "";
+  let acted = false;
+  while (events.length < count) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    buffered += new TextDecoder().decode(value);
+    for (let end = buffered.indexOf("\n\n"); end !== -1; end = buffered.indexOf("\n\n")) {
+      const frame = buffered.slice(0, end);
+      buffered = buffered.slice(end + 2);
+      if (frame.startsWith("data: ")) events.push(JSON.parse(frame.slice(6)));
+    }
+    if (!acted) {
+      acted = true;
+      await during();
+    }
+  }
+  await reader.cancel();
+  return events;
 }
 
 /** The page's Send feedback, as upstream's plan page posts it. */
@@ -246,5 +285,151 @@ describe("Remarks wait for a listener", () => {
 
     listener.socket.send(JSON.stringify({ type: "subscribe", reviews: ["x".repeat(70 * 1024)] }));
     expect(await listener.closed).toBe(1009);
+  });
+});
+
+describe("Rounds, Approve, Cancel and list", () => {
+  test("Approve with notes finishes the Round; listeners get the Finish until it is acknowledged", async () => {
+    await start();
+    const review = await openReview("plan.md");
+    const live = await listen("session-a");
+    await subscribe(live, [review.review_id]);
+
+    await sendFeedback(review.link, [COMMENT]);
+    const finish = live.until("finish");
+    const approved = await post(`${review.link}api/approve`, { feedback: "Ship it, but name the owner.", annotations: [], draftGeneration: 2 });
+    expect(approved.status).toBe(200);
+    expect((await finish).at(-1)).toMatchObject({
+      type: "finish",
+      review_id: review.review_id,
+      round: 1,
+      notes: "Ship it, but name the owner.",
+    });
+    expect((await list()).reviews[0]).toMatchObject({ state: "finished", round: 1 });
+
+    const later = await listen("session-b");
+    const replay = await subscribe(later, "all");
+    expect(replay.map((frame) => frame.type)).toEqual(["feedback_item", "finish", "listener", "subscribed"]);
+    const noticeId = replay[1].type === "finish" ? replay[1].id : "";
+    expect(noticeId).toMatch(/^nt_[0-9a-f]{24}$/);
+
+    later.socket.send(JSON.stringify({ type: "ack", id: noticeId }));
+    later.socket.send(JSON.stringify({ type: "ack", id: noticeId }));
+    const third = await listen("session-c");
+    expect((await subscribe(third, "all")).map((frame) => frame.type)).toEqual(["feedback_item", "listener", "listener", "subscribed"]);
+    expect(later.messages.filter((frame) => frame.type === "error")).toEqual([]);
+  });
+
+  test("Approve without notes, and Close, finish with empty notes", async () => {
+    await start();
+    const first = await openReview("plan.md");
+    const second = await openReview("brief.md");
+    const listener = await listen("session-a");
+    await subscribe(listener, "all");
+
+    let finish = listener.until("finish");
+    expect((await post(`${first.link}api/approve`, { draftGeneration: 1 })).status).toBe(200);
+    expect((await finish).at(-1)).toMatchObject({ review_id: first.review_id, notes: "" });
+
+    finish = listener.until("finish");
+    expect((await post(`${second.link}api/exit?generation=1&round=1`)).status).toBe(200);
+    expect((await finish).at(-1)).toMatchObject({ review_id: second.review_id, notes: "" });
+  });
+
+  test("a finished Review reopens only when asked, into the next Round on the same link with the current document", async () => {
+    await start();
+    const review = await openReview("plan.md");
+    const file = join(dir, "plan.md");
+    await post(`${review.link}api/approve`, { feedback: "", draftGeneration: 1 });
+
+    const ended = await openFile(file);
+    expect(ended).toEqual({ ...review, status: "user-ended", round: 1 });
+    expect((await list()).reviews[0]).toMatchObject({ state: "finished", round: 1 });
+
+    writeFileSync(file, "# plan.md\n\nRevised paragraph.\n");
+    const reopened = await openFile(file, { reopen: true });
+    expect(reopened).toEqual({ ...review, status: "opened", round: 2 });
+    expect((await list()).reviews[0]).toMatchObject({ state: "open", round: 2 });
+
+    expect(await (await fetch(review.link)).text()).toContain('<meta name="plannotator-review-round" content="2">');
+    const plan = (await (await fetch(`${review.link}api/plan`)).json()) as { plan: string };
+    expect(plan.plan).toBe("# plan.md\n\nRevised paragraph.\n");
+  });
+
+  test("Cancel ends the Round for the page and its listeners; an ended Review reports how it ended", async () => {
+    await start();
+    const review = await openReview("plan.md");
+    const listener = await listen("session-a");
+    await subscribe(listener, [review.review_id]);
+
+    const cancelNotice = listener.until("cancel");
+    const events = await roundEvents(review.link, 2, async () => {
+      const cancelled = await post(`${service!.url}/api/review/v1/reviews/${review.review_id}/cancel`);
+      expect(await cancelled.json()).toEqual({ review_id: review.review_id, state: "cancelled", round: 1 });
+    });
+    expect(events).toEqual([
+      { review_id: review.review_id, round: 1, state: "open" },
+      { review_id: review.review_id, round: 1, state: "cancelled" },
+    ]);
+    expect((await cancelNotice).at(-1)).toMatchObject({ type: "cancel", review_id: review.review_id, round: 1 });
+
+    const refused = await sendFeedback(review.link, [COMMENT]);
+    expect(refused.status).toBe(409);
+    expect(await refused.json()).toEqual({
+      status: "ended",
+      error: "round 1 has ended",
+      round: 1,
+      state: "cancelled",
+      ended_by: "agent",
+    });
+    expect((await list()).reviews[0].open_item_count).toBe(0);
+
+    const again = await post(`${service!.url}/api/review/v1/reviews/${review.review_id}/cancel`);
+    expect(await again.json()).toEqual({ review_id: review.review_id, state: "cancelled", round: 1 });
+    expect(listener.messages.filter((frame) => frame.type === "cancel")).toHaveLength(1);
+
+    // A cancelled Review reopens without `reopen`.
+    expect(await openFile(join(dir, "plan.md"))).toEqual({ ...review, status: "opened", round: 2 });
+
+    const brief = await openReview("brief.md");
+    await post(`${brief.link}api/approve`, { draftGeneration: 1 });
+    const finished = await post(`${service!.url}/api/review/v1/reviews/${brief.review_id}/cancel`);
+    expect(await finished.json()).toEqual({ review_id: brief.review_id, state: "finished", round: 1 });
+    expect((await post(`${service!.url}/api/review/v1/reviews/ffffffffffffffff/cancel`)).status).toBe(404);
+  });
+
+  test("a page command for a Round that is not open writes nothing", async () => {
+    await start();
+    const review = await openReview("plan.md");
+    await post(`${service!.url}/api/review/v1/reviews/${review.review_id}/cancel`);
+    await openFile(join(dir, "plan.md"));
+
+    const stale = await post(`${review.link}api/feedback`, { annotations: [COMMENT], round: 1 });
+    expect(stale.status).toBe(409);
+    expect(await stale.json()).toEqual({ status: "stale-round", error: "round 1 is not open; the Review is in round 2", round: 2 });
+    expect((await post(`${review.link}api/approve`, { round: 0 })).status).toBe(400);
+    expect((await post(`${review.link}api/exit?round=x`)).status).toBe(400);
+    expect((await post(`${review.link}api/exit?round=1`)).status).toBe(409);
+    expect((await list()).reviews[0]).toMatchObject({ state: "open", round: 2, open_item_count: 0 });
+
+    expect((await post(`${review.link}api/feedback`, { annotations: [COMMENT], round: 2, draftGeneration: 3 })).status).toBe(200);
+    expect((await list()).reviews[0].open_item_count).toBe(1);
+  });
+
+  test("Rounds and notices survive a restart", async () => {
+    await start();
+    const review = await openReview("plan.md");
+    await post(`${review.link}api/approve`, { feedback: "Fine.", draftGeneration: 1 });
+    await service!.stop();
+    await start();
+
+    expect((await list()).reviews[0]).toMatchObject({ state: "finished", round: 1 });
+    const listener = await listen("session-a");
+    const replay = await subscribe(listener, "all");
+    expect(replay[0]).toMatchObject({ type: "finish", notes: "Fine." });
+    expect(JSON.parse(readFileSync(join(reviewsDir, review.review_id, "notices.json"), "utf8")).notices[0]).toMatchObject({
+      type: "finish",
+      status: "pending",
+    });
   });
 });
