@@ -10,6 +10,8 @@ export {
   resolveServiceSettings,
   REVIEWS_DIR_ENV,
   SERVICE_PORT_ENV,
+  TEMPORARY_ORIGIN_ENV,
+  TEMPORARY_PORT_ENV,
   type ReviewServiceSettings,
 } from "./settings.ts";
 export type { Door, DoorListen } from "./doors.ts";
