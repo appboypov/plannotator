@@ -124,6 +124,40 @@ describe("plannotator annotate through the review service", () => {
     expect(await call.result).toEqual({ ok: true, outcome: { feedback: "Rework it." } });
   });
 
+  test("a Remark delivered to the call's session while its socket was gone still reaches it after the reconnect", async () => {
+    await start();
+    const file = document("plan.md");
+    let review: OpenReviewResponse | undefined;
+    const result = annotateThroughService({
+      file,
+      port: service!.port,
+      sessionId: "annotate-test",
+      onOpened: (opened) => {
+        review = opened;
+      },
+      // Long enough that the Remark below goes out before the call is back.
+      reconnect: { attempts: 3, delayMs: 500 },
+    });
+    const reviews = `http://127.0.0.1:${service!.port}/api/review/v1/reviews`;
+    const listening = async () => ((await (await fetch(reviews)).json()).reviews[0]?.listeners ?? []).includes("annotate-test");
+    while (!(await listening())) await Bun.sleep(10);
+
+    // Another socket under the same session id replaces the call's, and takes the Remark.
+    const thief = new WebSocket(`ws://127.0.0.1:${service!.port}/api/review/v1/listen?session=annotate-test`);
+    const subscribed = new Promise<void>((resolve) => {
+      thief.onmessage = (event) => {
+        if (JSON.parse(String(event.data)).type === "subscribed") resolve();
+      };
+    });
+    thief.onopen = () => thief.send(JSON.stringify({ type: "subscribe", reviews: [review!.review_id] }));
+    await subscribed;
+    const annotations = [{ blockId: "block-1", type: "COMMENT", originalText: "First paragraph.", text: "Say who owns it." }];
+    expect((await post(`${review!.link}api/feedback`, { round: 1, feedback: "Say who owns it.", annotations })).status).toBe(200);
+
+    expect(await result).toEqual({ ok: true, outcome: { feedback: "Say who owns it." } });
+    thief.close();
+  });
+
   test("Send feedback without the page's text prints its Remarks formatted, ends the Round, and the next call opens the next Round without it", async () => {
     await start();
     const file = document("plan.md");

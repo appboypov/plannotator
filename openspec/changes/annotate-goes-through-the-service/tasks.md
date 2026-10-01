@@ -8,7 +8,7 @@
 
 - [x] 2.1 `annotate-service.ts`: version check, open with `reopen`, listen per call, outcome per Round end, ack and exit barrier, reconnect
 - [x] 2.2 Call site in `index.ts` for a plain local file; clear error with no service
-- [x] 2.3 Tests: Approve with notes and ack, Close, Send feedback with the next Round, reopen after Approve, two files at once, another agent's Cancel, no service
+- [x] 2.3 Tests: Approve with notes and ack, Close, Send feedback with the next Round, reopen after Approve, two files at once, another agent's Cancel, no service, feedback before Approve, a Remark lost with a replaced socket
 
 ## 3. Docs and proof
 

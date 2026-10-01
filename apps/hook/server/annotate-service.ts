@@ -177,9 +177,16 @@ function waitForRound(
   const sessionId = options.sessionId ?? annotateSessionId();
   const reconnect = options.reconnect ?? DEFAULT_RECONNECT;
   const log = options.log ?? (() => {});
-  const listenUrl = new URL(LISTEN_PATH, origin);
-  listenUrl.protocol = "ws:";
-  listenUrl.searchParams.set("session", sessionId);
+  // A reconnect listens under a new session id: the service marks a Remark delivered when
+  // it sends it, so one lost with the old socket would not replay to the same session.
+  // The new session gets every open Remark of the Review; `remarks` takes each once.
+  let connections = 0;
+  const listenUrl = () => {
+    const url = new URL(LISTEN_PATH, origin);
+    url.protocol = "ws:";
+    url.searchParams.set("session", connections === 1 ? sessionId : `${sessionId}-r${connections - 1}`);
+    return url.href;
+  };
 
   const remarks = new Map<string, Remark>();
   let cancelling = false;
@@ -260,6 +267,11 @@ function waitForRound(
       log(`review service: ${message.error}`);
       return;
     }
+    // A confirmed subscription is progress: the reconnect attempts start over.
+    if (message.type === "subscribed") {
+      tries = 0;
+      return;
+    }
     // Only the Round this call opened: earlier Rounds' open Remarks and pending notices replay too.
     if (!("round" in message) || message.review_id !== review.review_id || message.round !== review.round) return;
     if (message.type === "feedback_item") {
@@ -272,10 +284,10 @@ function waitForRound(
   };
 
   const connect = () => {
-    const ws = new WebSocket(listenUrl.href);
+    connections += 1;
+    const ws = new WebSocket(listenUrl());
     socket = ws;
     ws.onopen = () => {
-      tries = 0;
       ws.send(JSON.stringify({ type: "subscribe", reviews: [review.review_id] }));
       if (remarks.size > 0 && !cancelling) void cancelRound();
     };

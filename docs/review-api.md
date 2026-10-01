@@ -301,7 +301,7 @@ plannotator serve [--port <n>]   # 127.0.0.1:4397; --port, else PLANNOTATOR_SERV
 
 1. It checks `GET /api/review/version` on `127.0.0.1:<port>`, the port in `PLANNOTATOR_SERVICE_PORT`, else 4397 (the same setting as `plannotator serve`).
 2. It opens the file's Review with `{ "file": <absolute path>, "reopen": true }`, so a call on an ended Review starts its next Round on the same link, prints the link to stderr and opens it in the browser (upstream's `PLANNOTATOR_BROWSER`, `PLANNOTATOR_SKIP_BROWSER_OPEN` and Glimpse settings apply).
-3. It listens on the listen socket with its own session id (`plannotator-annotate-<pid>-<hex>`), subscribed to that Review only, and takes only the opened Round's records; it acknowledges the Finish or Cancel notice it ends on. It reconnects when the socket drops.
+3. It listens on the listen socket with its own session id (`plannotator-annotate-<pid>-<hex>`), subscribed to that Review only, and takes only the opened Round's records; it acknowledges the Finish or Cancel notice it ends on. When the socket drops it reconnects under a new session id (`<session>-r<n>`), so a Remark sent to the lost socket replays to it; the 30 attempts, 1 s apart, start over at each confirmed subscription.
 4. It prints the outcome in upstream's shapes (`--json`: `{"decision":"approved"}`, `{"decision":"approved","feedback":<notes>}`, `{"decision":"dismissed"}`, `{"decision":"annotated","feedback":<markdown>}`; `--gate` and the strict exit codes as upstream):
    - Approve finishes the call as approved, with the Approve's notes as feedback when there are any.
    - Close (`dismissed: true`) finishes it as dismissed.
