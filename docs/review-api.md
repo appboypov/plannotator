@@ -183,6 +183,8 @@ The Review page calls its API relative to its own path (`/plannotator/session/<r
 
 `StaleRoundResponse` when `round` is not the current Round; `EndedRoundResponse` when the current Round has ended, with `state` (`finished` or `cancelled`) and `ended_by` (`user` or `agent`). A `round` that is not a positive integer gets 400 `round must be a positive integer`. The page turns read-only on either 409.
 
+The page covers itself when its Round is over, from the Round stream or from a 409: `Round N is finished`, `Round N was cancelled`, or `Round N is open` with a button that reloads into the new Round. A reload of an ended Round shows the same cover. The tab that approves keeps upstream's completion screen.
+
 ## The page's Remarks and Replies
 
 `GET /plannotator/session/<review_id>/api/review-replies` (`PAGE_REPLIES_PATH`, relative to the page: `<link>api/review-replies`) answers the page, open or ended, with HTTP 200 and `ReviewRepliesResponse`: every Remark of every Round in store order, each with its `at`, `status` and the Replies that name it in the order they were sent, then the Replies that name no Remark:
@@ -215,6 +217,8 @@ The Review page calls its API relative to its own path (`/plannotator/session/<r
 ```
 
 A `PageRemark` is a `Remark` with `at`, `status` (`open` or `answered`) and `replies`. It is a page route like the Round stream: the service answers it, the page server never sees it, and it carries no listener data. An unknown `review_id` gets 404 `review not found`.
+
+The page reads this route each time its annotation panel opens and lists the Remarks under a "Sent" divider below the draft: each Remark read-only and stamped with its Round, each Reply under every Remark it answers, labelled "Reply" from "Agent", and the Replies that answer no Remark last. Sent Remarks never join the draft, so Send feedback and Approve do not send them again. A failed read logs and shows no "Sent" section.
 
 ## Listen to Reviews
 

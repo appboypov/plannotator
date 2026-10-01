@@ -7,23 +7,23 @@
 import type { PageClosure } from '@plannotator/shared/review-api/page-round';
 import type { EndedState } from '@plannotator/shared/review-api';
 
-const COPY: Record<EndedState | 'next-round', { title: string; body: string }> = {
-  cancelled: {
-    title: 'This review was cancelled',
+const COPY: Record<EndedState | 'next-round', (round: number) => { title: string; body: string }> = {
+  cancelled: (round) => ({
+    title: `Round ${round} was cancelled`,
     body: 'The agent cancelled this round, so the page is closed. It opens again when the agent asks for another review.',
-  },
-  finished: {
-    title: 'This review is finished',
+  }),
+  finished: (round) => ({
+    title: `Round ${round} is finished`,
     body: 'This round ended, so the page is closed. It opens again when the agent asks for another review.',
-  },
-  'next-round': {
-    title: 'A new round is open',
+  }),
+  'next-round': (round) => ({
+    title: `Round ${round} is open`,
     body: 'The document was sent for review again. Reload to review the new round.',
-  },
+  }),
 };
 
 export function showReviewPageClosure(closure: PageClosure): void {
-  const copy = COPY[closure.kind === 'ended' ? closure.state : closure.kind];
+  const copy = COPY[closure.kind === 'ended' ? closure.state : closure.kind](closure.round);
   const cover = document.createElement('div');
   cover.setAttribute('role', 'alertdialog');
   cover.setAttribute('aria-modal', 'true');
