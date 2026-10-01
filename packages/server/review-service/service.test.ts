@@ -228,6 +228,75 @@ describe("review service", () => {
     fail = false;
     expect((await fetch(`${link}api/plan`)).status).toBe(200);
   });
+
+  test("a Visibility change whose body arrives after a Cancel keeps the Cancel", async () => {
+    await start();
+    const { review_id } = (await (await open(document("plan.md", "# Plan\n"))).json()) as OpenReviewResponse;
+    const body = JSON.stringify({ visibility: "public" });
+    const { port } = new URL(service!.url);
+    const answered = Promise.withResolvers<string>();
+    let received = "";
+    const socket = await Bun.connect({
+      hostname: "127.0.0.1",
+      port: Number(port),
+      socket: {
+        data: (_socket, chunk) => {
+          received += chunk.toString();
+          if (received.includes("\r\n\r\n{")) answered.resolve(received);
+        },
+      },
+    });
+    socket.write(
+      `POST /api/review/v1/reviews/${review_id}/visibility HTTP/1.1\r\nHost: 127.0.0.1:${port}\r\nContent-Type: application/json\r\nContent-Length: ${body.length}\r\n\r\n`,
+    );
+    // The service exposes no signal for "headers routed, body awaited"; a real pause lets it
+    // route the request over the socket before the Cancel, which is the race under test.
+    await Bun.sleep(50);
+    await fetch(`${service!.url}/api/review/v1/reviews/${review_id}/cancel`, { method: "POST" });
+    socket.write(body);
+    expect(await answered.promise).toContain('"visibility":"public"');
+    socket.end();
+
+    const stored = JSON.parse(readFileSync(join(reviewsDir, review_id, "review.json"), "utf8"));
+    expect(stored).toMatchObject({ visibility: "public", state: "cancelled", round: 1 });
+  });
+
+  test("a page load whose HTML arrives after a Cancel keeps the Cancel", async () => {
+    const requested = Promise.withResolvers<void>();
+    const release = Promise.withResolvers<void>();
+    const pageServer = Bun.serve({
+      port: 0,
+      fetch: () => {
+        requested.resolve();
+        const html = new ReadableStream<Uint8Array>({
+          async start(controller) {
+            controller.enqueue(new TextEncoder().encode("<html><head>"));
+            await release.promise;
+            controller.enqueue(new TextEncoder().encode("</head><body>page</body></html>"));
+            controller.close();
+          },
+        });
+        return new Response(html, { headers: { "content-type": "text/html" } });
+      },
+    });
+    service = await startReviewService({
+      port: 0,
+      reviewsDir,
+      version: "test",
+      log: () => {},
+      startPage: async () => ({ port: pageServer.port ?? 0, stop: () => pageServer.stop(true) }),
+    });
+    const { review_id, link } = (await (await open(document("plan.md", "# Plan\n"))).json()) as OpenReviewResponse;
+    const loaded = fetch(link);
+    await requested.promise;
+    await fetch(`${service.url}/api/review/v1/reviews/${review_id}/cancel`, { method: "POST" });
+    release.resolve();
+    expect(await (await loaded).text()).toContain('<meta name="plannotator-review-round" content="1">');
+
+    const stored = JSON.parse(readFileSync(join(reviewsDir, review_id, "review.json"), "utf8"));
+    expect(stored).toMatchObject({ state: "cancelled", round: 1 });
+    expect(stored.last_page_open).toEqual(expect.any(String));
+  });
 });
 
 describe("service settings", () => {

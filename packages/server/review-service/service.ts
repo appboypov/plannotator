@@ -233,8 +233,10 @@ export async function startReviewService(options: ReviewServiceOptions): Promise
     if (body === MALFORMED) return error(400, "malformed JSON");
     const parsed = parseVisibilityRequest(body);
     if (!parsed.ok) return error(400, parsed.error);
-    const updated = { ...review, visibility: parsed.value.visibility };
-    if (updated.visibility !== review.visibility) await store.save(updated);
+    // Read again after the body arrived: a Cancel or reopen meanwhile must stand.
+    const current = store.get(review.review_id) ?? review;
+    const updated = { ...current, visibility: parsed.value.visibility };
+    if (updated.visibility !== current.visibility) await store.save(updated);
     return Response.json({
       review_id: updated.review_id,
       visibility: updated.visibility,
@@ -336,8 +338,9 @@ export async function startReviewService(options: ReviewServiceOptions): Promise
     const answer = await pages.forward(request, running, path, search);
     // Loading the page itself (not its API calls) is what the list reports as `last_page_open`.
     if (request.method === "GET" && path === "/" && answer.ok) {
+      const pinned = await pinRound(answer, (store.get(review.review_id) ?? review).round);
+      // Read again after the page's HTML arrived: a Cancel or reopen meanwhile must stand.
       const current = store.get(review.review_id) ?? review;
-      const pinned = await pinRound(answer, current.round);
       const at = new Date().toISOString();
       await store.save({ ...current, last_page_open: at });
       listeners.pageOpened({ type: "page_open", review_id: current.review_id, round: current.round, at });
