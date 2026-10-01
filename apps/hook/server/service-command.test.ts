@@ -106,6 +106,15 @@ describe("plannotator service install", () => {
     expect(await runServiceCommand(["install"], ctx)).toBe(1);
     expect(lines.at(-1)).toContain("a server launchd does not run");
   });
+
+  test("Given the old process still answers while launchd replaces it, install waits for the new build", async () => {
+    const answers = [
+      { version: "0.27.12-appboypov.af5502f7", major: 1, label: SERVICE_LABEL },
+      { version: "0.27.23-appboypov.abc", major: 1, label: SERVICE_LABEL },
+    ];
+    const { ctx } = context({ readHealth: async (_port, _timeout, accept) => answers.find(accept) ?? answers.at(-1)! });
+    expect(await runServiceCommand(["install"], ctx)).toBe(0);
+  });
 });
 
 describe("plannotator service uninstall and status", () => {
@@ -115,6 +124,15 @@ describe("plannotator service uninstall and status", () => {
     expect(await runServiceCommand(["uninstall"], ctx)).toBe(0);
     expect(existsSync(plan.plistFile)).toBe(false);
     expect(existsSync(plan.binary)).toBe(true);
+  });
+
+  test("Given launchd fails to unload a loaded service, uninstall fails and keeps the plist", async () => {
+    let failing = false;
+    const { ctx, plan } = context({ answer: (args) => (failing && args[0] === "bootout" ? { status: 5, stdout: "", stderr: "Input/output error" } : OK) });
+    await runServiceCommand(["install"], ctx);
+    failing = true;
+    expect(await runServiceCommand(["uninstall"], ctx)).toBe(1);
+    expect(existsSync(plan.plistFile)).toBe(true);
   });
 
   test("Given launchd runs the service and it answers as the LaunchAgent, status succeeds", async () => {

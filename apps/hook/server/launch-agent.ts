@@ -167,9 +167,21 @@ export async function loadService(
   );
 }
 
-/** Unloads the service and removes its plist. Answers whether launchd had it loaded. */
+/**
+ * Unloads the service and removes its plist. Answers whether launchd had it loaded. A loaded
+ * service launchd fails to unload keeps its plist, so it is never left running without one.
+ */
 export function unloadService(plan: ServicePlan, { domain, launchctl = runLaunchctl }: { domain: string; launchctl?: Launchctl }): boolean {
-  const loaded = launchctl(["bootout", `${domain}/${plan.label}`]).status === 0;
+  const target = `${domain}/${plan.label}`;
+  const loaded = launchctl(["print", target]).status === 0;
+  if (loaded) {
+    const bootout = launchctl(["bootout", target]);
+    if (bootout.status !== 0) {
+      throw new Error(
+        `launchd did not unload ${plan.label}: launchctl bootout ${target} failed with status ${bootout.status}: ${bootout.stderr.trim() || bootout.stdout.trim()}. ${plan.plistFile} stays.`,
+      );
+    }
+  }
   rmSync(plan.plistFile, { force: true });
   return loaded;
 }
