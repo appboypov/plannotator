@@ -2,10 +2,11 @@
  * The fork's review service (`plannotator serve`): one long-lived server on
  * 127.0.0.1 that serves many documents, each as a Review with a lasting id, link and
  * folder. It answers the review API v1 routes built so far (version, open, list,
- * visibility), health, and every Review's page under `/plannotator/session/<id>/`,
- * which it forwards to that Review's own upstream annotate server (see `pages.ts`).
- * Contract: docs/review-api.md. Remarks, the listen socket, Replies and Cancel come
- * with later stories; until then their routes answer 404 like any unknown route.
+ * visibility, the listen socket), health, and every Review's page under
+ * `/plannotator/session/<id>/`, which it forwards to that Review's own upstream
+ * annotate server (see `pages.ts`) except Send feedback, which it keeps as Remarks
+ * (see `remarks.ts`, `listen.ts`). Contract: docs/review-api.md. Replies and Cancel
+ * come with later stories; until then their routes answer 404 like any unknown route.
  */
 import { realpath, stat } from "node:fs/promises";
 import {
@@ -13,12 +14,14 @@ import {
   DEFAULT_TEMPORARY_ORIGIN,
   ERRORS,
   HEALTH_PATH,
+  LISTEN_PATH,
   PUBLIC_ORIGIN,
   REVIEWS_PATH,
   SESSION_PATH_PREFIX,
   VERSION_PATH,
   isLocalRequest,
   parseListReviewsQuery,
+  parseListenSession,
   parseOpenReviewRequest,
   parseVisibilityRequest,
   reviewLink,
@@ -32,7 +35,9 @@ import {
   type VisibilityResponse,
 } from "@plannotator/shared/review-api";
 import type { Server } from "bun";
+import { ReviewListeners, listenData, type ListenData } from "./listen.ts";
 import { ReviewPages, type StartReviewPage } from "./pages.ts";
+import { RemarkStore, openRemark, remarksFromFeedback } from "./remarks.ts";
 import { ReviewStore, reviewIdForFile, type StoredReview } from "./store.ts";
 
 export type ReviewServiceOptions = {
@@ -48,6 +53,8 @@ export type ReviewServiceOptions = {
   /** The ngrok origin of `temporary` links until story 1.11's setting names another. */
   temporaryOrigin?: string;
   log?: (line: string) => void;
+  /** How often listeners are pinged; the contract's 30 seconds unless a test names another. */
+  heartbeatMs?: number;
 };
 
 export type ReviewService = {
@@ -59,6 +66,8 @@ export type ReviewService = {
 };
 
 const VISIBILITY_ROUTE = new RegExp(`^${REVIEWS_PATH}/([^/]+)/visibility$`);
+const FEEDBACK_PATH = "/api/feedback";
+const DRAFT_PATH = "/api/draft";
 const MALFORMED = Symbol("malformed JSON");
 
 /** Loads the Reviews under `reviewsDir` and starts serving them. */
@@ -66,18 +75,23 @@ export async function startReviewService(options: ReviewServiceOptions): Promise
   const hostname = options.hostname ?? "127.0.0.1";
   const log = options.log ?? ((line: string) => console.error(`[plannotator] ${line}`));
   const store = await ReviewStore.load(options.reviewsDir, log);
+  const remarks = await RemarkStore.load(
+    store.all().map((review) => review.review_id),
+    (reviewId) => store.folder(reviewId),
+    log,
+  );
+  const listeners = new ReviewListeners(remarks, log, options.heartbeatMs);
   const pages = new ReviewPages(options.startPage);
   let origins: LinkOrigins;
 
   const summary = (review: StoredReview): Review => ({
     ...review,
     link: reviewLink(review.review_id, review.visibility, origins),
-    // No Remark or listener exists before stories 1.5 and 1.6.
-    open_item_count: 0,
-    listeners: [],
+    open_item_count: remarks.open(review.review_id).length,
+    listeners: listeners.subscribers(review.review_id),
   });
 
-  async function route(request: Request, server: Server<undefined>): Promise<Response> {
+  async function route(request: Request, server: Server<ListenData>): Promise<Response | undefined> {
     const url = new URL(request.url);
     const { pathname } = url;
     const method = request.method;
@@ -85,9 +99,17 @@ export async function startReviewService(options: ReviewServiceOptions): Promise
     const fromThisMac = isLocalRequest(
       { host: headers.get("host"), origin: headers.get("origin"), referer: headers.get("referer") },
       server.port ?? 0,
-      method === "POST",
+      method === "POST" || pathname === LISTEN_PATH,
     );
     if (!fromThisMac) return error(403, ERRORS.forbidden);
+
+    if (method === "GET" && pathname === LISTEN_PATH) {
+      const session = parseListenSession(url.searchParams.get("session"));
+      if (!session.ok) return new Response(`${session.error}\n`, { status: 400 });
+      return server.upgrade(request, { data: listenData(session.value) })
+        ? undefined
+        : new Response("websocket upgrade required\n", { status: 400 });
+    }
 
     if (method === "GET" && pathname === VERSION_PATH) return Response.json(API_VERSION);
     if (method === "GET" && pathname === HEALTH_PATH) {
@@ -109,7 +131,9 @@ export async function startReviewService(options: ReviewServiceOptions): Promise
       if (!review) return error(404, ERRORS.reviewNotFound);
       // The page calls its API relative to its own path, which needs the trailing slash.
       if (rest.length === 0) return Response.redirect(`${reviewPagePath(reviewId)}${url.search}`, 308);
-      return page(request, review, `/${rest.join("/")}`, url.search);
+      const path = `/${rest.join("/")}`;
+      if (method === "POST" && path === FEEDBACK_PATH) return sendFeedback(review, await readJson(request), request);
+      return page(request, review, path, url.search);
     }
     return error(404, "not found");
   }
@@ -156,7 +180,11 @@ export async function startReviewService(options: ReviewServiceOptions): Promise
       .all()
       .filter((review) => canonical === undefined || review.file === canonical)
       .sort((a, b) => a.file.localeCompare(b.file))
-      .map((review) => (canonical === undefined ? summary(review) : { ...summary(review), open_items: [] }));
+      .map((review) =>
+        canonical === undefined
+          ? summary(review)
+          : { ...summary(review), open_items: remarks.open(review.review_id).map(openRemark) },
+      );
     return Response.json({ reviews } satisfies ListReviewsResponse);
   }
 
@@ -173,6 +201,32 @@ export async function startReviewService(options: ReviewServiceOptions): Promise
     } satisfies VisibilityResponse);
   }
 
+  /**
+   * The page's Send feedback: each annotation becomes one Remark of the current Round,
+   * stored before the answer and sent to the Review's listeners. The upstream page
+   * server never sees it, so its one-shot decision stays open and the reviewer can send
+   * again. The service first clears the sent draft there, as upstream's own feedback
+   * route does; when that fails nothing is stored, so a reload cannot bring back
+   * annotations that are already Remarks.
+   */
+  async function sendFeedback(review: StoredReview, body: unknown, request: Request): Promise<Response> {
+    if (body === MALFORMED) return error(400, "malformed JSON");
+    const generation = body !== null && typeof body === "object" && "draftGeneration" in body ? body.draftGeneration : undefined;
+    const search = typeof generation === "number" ? `?generation=${generation}` : "";
+    const cleared = await page(new Request(request.url, { method: "DELETE" }), review, DRAFT_PATH, search);
+    if (!cleared.ok) {
+      log(`could not clear the sent draft of Review ${review.review_id}: HTTP ${cleared.status}`);
+      return error(502, "feedback not stored: the page could not clear its draft");
+    }
+    const added = remarksFromFeedback(body, review, new Date().toISOString());
+    if (added.length > 0) {
+      await remarks.add(review.review_id, added);
+      log(`stored ${added.length} Remark(s) for Review ${review.review_id} round ${review.round}`);
+      await listeners.remarksStored(review.review_id, added);
+    }
+    return Response.json({ ok: true });
+  }
+
   async function page(request: Request, review: StoredReview, path: string, search: string): Promise<Response> {
     let running;
     try {
@@ -186,17 +240,20 @@ export async function startReviewService(options: ReviewServiceOptions): Promise
     // Loading the page itself (not its API calls) is what the list reports as `last_page_open`.
     if (request.method === "GET" && path === "/" && answer.ok) {
       const current = store.get(review.review_id) ?? review;
-      await store.save({ ...current, last_page_open: new Date().toISOString() });
+      const at = new Date().toISOString();
+      await store.save({ ...current, last_page_open: at });
+      listeners.pageOpened({ type: "page_open", review_id: current.review_id, round: current.round, at });
     }
     return answer;
   }
 
-  const server = Bun.serve({
+  const server = Bun.serve<ListenData>({
     hostname,
     port: options.port,
     // Page streams (the client-lease SSE) stay open for as long as the tab does.
     idleTimeout: 0,
     fetch: route,
+    websocket: listeners.websocket,
   });
   const url = `http://${hostname}:${server.port}`;
   origins = {
@@ -210,8 +267,10 @@ export async function startReviewService(options: ReviewServiceOptions): Promise
     url,
     port: server.port ?? options.port,
     stop: async () => {
+      listeners.stop();
       await pages.stopAll();
       server.stop(true);
+      await remarks.settled();
     },
   };
 }
