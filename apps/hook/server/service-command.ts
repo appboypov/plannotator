@@ -6,6 +6,7 @@ import { homedir } from "node:os";
 import {
   CARRIED_SETTINGS,
   installBinary,
+  installedPort,
   launchdState,
   loadService,
   runLaunchctl,
@@ -102,14 +103,16 @@ function uninstall(plan: ServicePlan, domain: string, context: ServiceCommandCon
 
 async function status(plan: ServicePlan, domain: string, context: ServiceCommandContext): Promise<number> {
   const state = launchdState(plan, { domain, launchctl: context.launchctl });
-  const health = state.loaded ? await context.readHealth(plan.port, 2_000) : null;
+  // The installed plist names the port launchd runs it on, whatever this shell's environment says.
+  const port = installedPort(plan) ?? plan.port;
+  const health = state.loaded ? await context.readHealth(port, 2_000) : null;
   context.out(`label: ${plan.label}`);
   context.out(`launchd: ${state.loaded ? `${state.state ?? "loaded"}${state.pid ? ` (pid ${state.pid})` : ""}` : "not loaded"}`);
   context.out(`plist: ${plan.plistFile}`);
   context.out(`binary: ${plan.binary}`);
   context.out(`logs: ${plan.logFile}`);
   context.out(
-    `health: ${health ? `http://127.0.0.1:${plan.port} version ${health.version}, review API major ${health.major ?? "unknown"}, run by ${health.label ?? "a server launchd does not run"}` : `nothing answers on 127.0.0.1:${plan.port}`}`,
+    `health: ${health ? `http://127.0.0.1:${port} version ${health.version}, review API major ${health.major ?? "unknown"}, run by ${health.label ?? "a server launchd does not run"}` : `nothing answers on 127.0.0.1:${port}`}`,
   );
   return state.loaded && state.state === "running" && health?.label === plan.label ? 0 : 1;
 }

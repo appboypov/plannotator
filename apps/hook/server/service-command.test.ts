@@ -123,6 +123,18 @@ describe("plannotator service uninstall and status", () => {
     expect(lines).toContain("launchd: running (pid 4242)");
   });
 
+  test("Given a service installed on another port, status asks that port whatever this shell's environment says", async () => {
+    const asked: number[] = [];
+    const { ctx } = context({
+      env: { PLANNOTATOR_SERVICE_PORT: "4497" },
+      answer: () => ({ status: 0, stdout: "\tstate = running\n", stderr: "" }),
+      readHealth: async (port) => (asked.push(port), { version: "0.27.23-appboypov.abc", major: 1, label: SERVICE_LABEL }),
+    });
+    await runServiceCommand(["install"], ctx);
+    expect(await runServiceCommand(["status"], { ...ctx, env: {} })).toBe(0);
+    expect(asked).toEqual([4497, 4497]);
+  });
+
   test("Given the service is not loaded, status fails without asking for health", async () => {
     let asked = false;
     const { ctx, lines } = context({ answer: () => ({ status: 113, stdout: "", stderr: "not found" }), readHealth: async () => ((asked = true), null) });

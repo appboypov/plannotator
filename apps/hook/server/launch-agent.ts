@@ -5,7 +5,7 @@
  * The parity reference is `~/Repos/Forks/pew-pew-lavish/src/launch-agent.js`.
  */
 import { spawnSync } from "node:child_process";
-import { chmodSync, copyFileSync, existsSync, mkdirSync, realpathSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, copyFileSync, existsSync, mkdirSync, readFileSync, realpathSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 
 export const SERVICE_LABEL = "nl.de-appspecialist.plannotator";
@@ -183,4 +183,12 @@ export function launchdState(plan: ServicePlan, { domain, launchctl = runLaunchc
   const state = /^\s*state = (.+)$/m.exec(printed.stdout)?.[1]?.trim() ?? null;
   const pid = /^\s*pid = (\d+)$/m.exec(printed.stdout)?.[1];
   return { loaded: true, state, pid: pid ? Number(pid) : null };
+}
+
+/** The port the installed plist runs the service on: its `PLANNOTATOR_SERVICE_PORT`, else the default; null without a plist. */
+export function installedPort(plan: ServicePlan): number | null {
+  if (!existsSync(plan.plistFile)) return null;
+  const plist = readFileSync(plan.plistFile, "utf8");
+  const port = /<key>PLANNOTATOR_SERVICE_PORT<\/key>\s*<string>(\d+)<\/string>/.exec(plist)?.[1];
+  return port ? Number(port) : DEFAULT_PORT;
 }
