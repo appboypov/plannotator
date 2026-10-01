@@ -25,6 +25,20 @@ Code: `packages/server/review-service/` and `apps/hook/server/serve-command.ts`.
 
 The plan page calls upstream's root `/api/...` paths; under a session path `packages/shared/review-api/page-base.ts`, installed first by `apps/hook/review-page-base.ts`, sends those `fetch`, `EventSource`, `WebSocket` and image calls to `<page path>api/...`. A plain `plannotator annotate` page is untouched.
 
+## Service under launchd
+
+`plannotator service install` puts the running build at `~/.local/bin/plannotator` and has the LaunchAgent `nl.de-appspecialist.plannotator` run `plannotator serve`: started at login, kept alive, restarted when it exits. Install replaces a loaded service and waits until `/plannotator/health` answers with its version and label. Build and install from a checkout:
+
+```sh
+bun install --frozen-lockfile
+bun fork/build-binary.ts                   # fork/dist/plannotator, version <package version>-appboypov.<commit>
+fork/dist/plannotator service install
+plannotator service status                 # launchd state and health
+plannotator service uninstall              # unloads it and removes the plist; the binary stays
+```
+
+Logs: `~/Library/Logs/plannotator/nl.de-appspecialist.plannotator.log`. Install carries these settings from its environment into the plist when they are set, and prints them: `PLANNOTATOR_SERVICE_PORT`, `PLANNOTATOR_REVIEWS_DIR`, `PLANNOTATOR_DATA_DIR`, `PLANNOTATOR_PUBLIC_HOST`, `PLANNOTATOR_PUBLIC_PORT`, `PLANNOTATOR_PUBLIC_PEER`, `PLANNOTATOR_TEMPORARY_PORT`, `PLANNOTATOR_TEMPORARY_ORIGIN`. Unset, `plannotator serve`'s defaults apply. The plugin `omp-plannotator-review` runs these steps in its `bun run setup`, after checking the review API major. Code: `apps/hook/server/{service-command,launch-agent}.ts`, `fork/build-binary.ts`.
+
 ## Check
 
 GitHub Actions is off for this fork. The check runs on the VPS through Crabbox:
