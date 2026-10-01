@@ -126,6 +126,26 @@ export type Reply = {
   at: IsoTime;
 };
 
+/** Whether a Remark still waits for an answer: `answered` once a Reply names it. */
+export type RemarkStatus = "open" | "answered";
+
+/** A Remark as its Review page shows it: when it was stored, its status and the Replies that answer it. */
+export type PageRemark = Remark & {
+  at: IsoTime;
+  status: RemarkStatus;
+  /** The Replies naming this Remark, in the order they were sent. */
+  replies: Reply[];
+};
+
+/** `GET /plannotator/session/:review_id/api/review-replies` on HTTP 200, open or ended. */
+export type ReviewRepliesResponse = {
+  review_id: ReviewId;
+  /** Every Remark of every Round, in store order. */
+  remarks: PageRemark[];
+  /** The Replies that name no Remark, in the order they were sent. */
+  replies: Reply[];
+};
+
 /** A Review: one document's lasting link, its current Round and who listens. */
 export type Review = Round & {
   link: string;

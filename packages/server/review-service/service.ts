@@ -1,14 +1,14 @@
 /**
  * The fork's review service (`plannotator serve`): one long-lived server on
  * 127.0.0.1 that serves many documents, each as a Review with a lasting id, link and
- * folder. It answers the review API v1 routes built so far (version, open, list,
+ * folder. It answers every review API v1 route (version, open, list, Replies,
  * Cancel, visibility, the listen socket), health, and every Review's page under
  * `/plannotator/session/<id>/`, which it forwards to that Review's own upstream
  * annotate server (see `pages.ts`) except the page's Round-checked commands: Send
  * feedback becomes Remarks, Approve and Close finish the Round (ADR 0006; see
- * `records.ts`, `listen.ts`), and the page's Round stream (`page-rounds.ts`).
- * Contract: docs/review-api.md. Replies come with a later story; until then their
- * route answers 404 like any unknown route.
+ * `records.ts`, `listen.ts`), the page's Round stream (`page-rounds.ts`) and the
+ * page's Remarks with their Replies (`api/review-replies`).
+ * Contract: docs/review-api.md.
  */
 import { realpath, stat } from "node:fs/promises";
 import {
@@ -18,6 +18,7 @@ import {
   HEALTH_PATH,
   LISTEN_PATH,
   PUBLIC_ORIGIN,
+  PAGE_REPLIES_PATH,
   REVIEWS_PATH,
   SESSION_PATH_PREFIX,
   VERSION_PATH,
@@ -26,6 +27,7 @@ import {
   parseListenSession,
   parsePageRound,
   parseOpenReviewRequest,
+  parseReplyRequest,
   parseVisibilityRequest,
   reviewLink,
   reviewPagePath,
@@ -36,9 +38,11 @@ import {
   type CancelReviewResponse,
   type EndedRoundResponse,
   type OpenReviewResponse,
+  type ReplyResponse,
   type Review,
   type Round,
   type RoundRefusal,
+  type UnknownRemarksResponse,
   type VisibilityResponse,
 } from "@plannotator/shared/review-api";
 import type { Server } from "bun";
@@ -74,9 +78,10 @@ export type ReviewService = {
   stop: () => Promise<void>;
 };
 
-const REVIEW_ROUTE = new RegExp(`^${REVIEWS_PATH}/([^/]+)/(visibility|cancel)$`);
+const REVIEW_ROUTE = new RegExp(`^${REVIEWS_PATH}/([^/]+)/(replies|visibility|cancel)$`);
 const DRAFT_PATH = "/api/draft";
 const ROUND_STREAM_PATH = `/${PAGE_ROUND_PATH}`;
+const REPLIES_PAGE_PATH = `/${PAGE_REPLIES_PATH}`;
 
 /** The page's Round-checked commands the service answers itself (ADR 0006). */
 type PageCommand = "feedback" | "approve" | "exit";
@@ -140,7 +145,9 @@ export async function startReviewService(options: ReviewServiceOptions): Promise
     if (reviewMatch) {
       const review = store.get(decodeURIComponent(reviewMatch[1]));
       if (!review) return error(404, ERRORS.reviewNotFound);
-      return reviewMatch[2] === "cancel" ? cancel(review) : setVisibility(review, await readJson(request));
+      if (reviewMatch[2] === "cancel") return cancel(review);
+      const body = await readJson(request);
+      return reviewMatch[2] === "replies" ? reply(review, body) : setVisibility(review, body);
     }
 
     if (pathname.startsWith(SESSION_PATH_PREFIX)) {
@@ -153,6 +160,7 @@ export async function startReviewService(options: ReviewServiceOptions): Promise
       const command = method === "POST" ? PAGE_COMMANDS[path] : undefined;
       if (command) return pageCommand(command, review, request, url);
       if (method === "GET" && path === ROUND_STREAM_PATH) return pageRounds.stream(roundOf(review));
+      if (method === "GET" && path === REPLIES_PAGE_PATH) return Response.json(records.page(review.review_id));
       return page(request, review, path, url.search);
     }
     return error(404, "not found");
@@ -242,6 +250,31 @@ export async function startReviewService(options: ReviewServiceOptions): Promise
       visibility: updated.visibility,
       link: reviewLink(updated.review_id, updated.visibility, origins),
     } satisfies VisibilityResponse);
+  }
+
+  /**
+   * An agent's Reply, stored in the Review's folder and shown on its page beside the
+   * Remarks it names, from any Round, open or ended. Each named Remark is answered and
+   * no longer replayed. A Reply naming a Remark the Review does not have writes nothing.
+   */
+  async function reply(review: StoredReview, body: unknown): Promise<Response> {
+    if (body === MALFORMED) return error(400, "malformed JSON");
+    const parsed = parseReplyRequest(body);
+    if (!parsed.ok) return error(400, parsed.error);
+    const unknown = records.unknownRemarks(review.review_id, parsed.value.answers);
+    if (unknown.length > 0) {
+      return Response.json({ error: ERRORS.unknownRemarks, unknown } satisfies UnknownRemarksResponse, { status: 400 });
+    }
+    const stored = {
+      id: recordId("rp"),
+      review_id: review.review_id,
+      text: parsed.value.text,
+      answers: parsed.value.answers,
+      at: new Date().toISOString(),
+    };
+    await records.addReply(stored);
+    log(`stored Reply ${stored.id} for Review ${review.review_id} answering ${stored.answers.length} Remark(s)`);
+    return Response.json({ status: "sent", answered: stored.answers, reply: stored } satisfies ReplyResponse);
   }
 
   /**
