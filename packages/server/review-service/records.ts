@@ -17,6 +17,7 @@ import type {
   Notice,
   OpenRemark,
   Remark,
+  RemarkAnchor,
   RemarkEvent,
   RemarkId,
   RemarkStatus,
@@ -65,8 +66,10 @@ export function recordId(prefix: "fi" | "nt" | "rp"): string {
 
 /**
  * The Remarks of one Send feedback: one per entry of the page's `annotations`, in
- * order. The page's other fields (the formatted `feedback`, code annotations, the
- * draft generation) are not Remarks. A body without an `annotations` array has none.
+ * order, each carrying the page's formatted `feedback` text when it has one. A send
+ * with that text but no annotations (only question answers, images or code
+ * annotations) is one `global_comment` Remark whose words are the text, so it is not
+ * lost. The draft generation is not a Remark.
  */
 export function remarksFromFeedback(
   body: unknown,
@@ -74,29 +77,35 @@ export function remarksFromFeedback(
   at: IsoTime,
 ): StoredRemark[] {
   const annotations = field(body, "annotations");
-  if (!Array.isArray(annotations)) return [];
-  return annotations.map((annotation: unknown): StoredRemark => {
-    return {
-      id: recordId("fi"),
-      review_id: review.review_id,
-      round: review.round,
-      text: text(field(annotation, "text")),
-      anchor: {
-        selector: text(field(annotation, "blockId")),
-        tag: text(field(annotation, "type")).toLowerCase(),
-        text: text(field(annotation, "originalText")),
-      },
-      at,
-      status: "open",
-      delivered_to: [],
-    };
+  const feedback = text(field(body, "feedback"));
+  const sent = feedback.trim() ? { feedback } : {};
+  const remark = (words: string, anchor: RemarkAnchor): StoredRemark => ({
+    id: recordId("fi"),
+    review_id: review.review_id,
+    round: review.round,
+    text: words,
+    anchor,
+    ...sent,
+    at,
+    status: "open",
+    delivered_to: [],
   });
+  if (!Array.isArray(annotations) || annotations.length === 0) {
+    return "feedback" in sent ? [remark(feedback, { selector: "", tag: "global_comment", text: "" })] : [];
+  }
+  return annotations.map((annotation: unknown) =>
+    remark(text(field(annotation, "text")), {
+      selector: text(field(annotation, "blockId")),
+      tag: text(field(annotation, "type")).toLowerCase(),
+      text: text(field(annotation, "originalText")),
+    }),
+  );
 }
 
 /** [remark] as the listen socket's frame. */
 export function remarkEvent(remark: StoredRemark): RemarkEvent {
-  const { id, review_id, round, text, anchor } = remark;
-  return { type: "feedback_item", id, review_id, round, text, anchor };
+  const { id, review_id, round, text, anchor, feedback } = remark;
+  return { type: "feedback_item", id, review_id, round, text, anchor, ...(feedback === undefined ? {} : { feedback }) };
 }
 
 /** [remark] as a one-file list's open item. */
@@ -333,12 +342,14 @@ function parseRemark(value: unknown, reviewId: ReviewId): StoredRemark | undefin
   if (typeof selector !== "string" || typeof tag !== "string" || typeof excerpt !== "string") return undefined;
   if (typeof at !== "string" || (status !== "open" && status !== "answered")) return undefined;
   if (!Array.isArray(deliveredTo) || !deliveredTo.every((session) => typeof session === "string")) return undefined;
+  const feedback = field(value, "feedback");
   return {
     id,
     review_id: reviewId,
     round,
     text: remarkText,
     anchor: { selector, tag, text: excerpt },
+    ...(typeof feedback === "string" ? { feedback } : {}),
     at,
     status,
     delivered_to: deliveredTo,
@@ -365,7 +376,9 @@ function parseNotice(value: unknown, reviewId: ReviewId): StoredNotice | undefin
     status,
     ...(acknowledgedAt === undefined ? {} : { acknowledged_at: acknowledgedAt }),
   };
-  if (type === "finish" && typeof notes === "string") return { type, ...kept, notes };
+  if (type === "finish" && typeof notes === "string") {
+    return { type, ...kept, notes, ...(field(value, "dismissed") === true ? { dismissed: true } : {}) };
+  }
   if (type === "cancel") return { type, ...kept };
   return undefined;
 }
