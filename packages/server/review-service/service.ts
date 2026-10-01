@@ -65,6 +65,8 @@ export type ReviewServiceOptions = {
   hostname?: string;
   /** The ngrok origin of `temporary` links until story 1.11's setting names another. */
   temporaryOrigin?: string;
+  /** The LaunchAgent label health names when launchd runs the service (`plannotator service install`). */
+  serviceLabel?: string;
   log?: (line: string) => void;
   /** How often listeners are pinged; the contract's 30 seconds unless a test names another. */
   heartbeatMs?: number;
@@ -136,7 +138,13 @@ export async function startReviewService(options: ReviewServiceOptions): Promise
 
     if (method === "GET" && pathname === VERSION_PATH) return Response.json(API_VERSION);
     if (method === "GET" && pathname === HEALTH_PATH) {
-      return Response.json({ ok: true, app: "plannotator", version: options.version, api: API_VERSION } satisfies HealthResponse);
+      return Response.json({
+        ok: true,
+        app: "plannotator",
+        version: options.version,
+        api: API_VERSION,
+        ...(options.serviceLabel ? { service: { label: options.serviceLabel } } : {}),
+      } satisfies HealthResponse);
     }
     if (pathname === REVIEWS_PATH && method === "POST") return open(await readJson(request));
     if (pathname === REVIEWS_PATH && method === "GET") return list(url.searchParams.get("file"));

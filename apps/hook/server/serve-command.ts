@@ -16,6 +16,7 @@ import {
   type StartReviewPage,
 } from "@plannotator/server/review-service";
 import { resolveAnnotateTarget } from "./annotate-resolution";
+import { SERVICE_LABEL_ENV } from "./launch-agent";
 
 export const SERVE_USAGE = [
   "Usage:",
@@ -93,5 +94,11 @@ export async function runServeCommand(options: {
     return { port: page.port, stop: page.stop };
   };
 
-  await startReviewService({ port, reviewsDir, version: options.version, startPage });
+  await startReviewService({
+    port,
+    reviewsDir,
+    version: options.version,
+    startPage,
+    serviceLabel: process.env[SERVICE_LABEL_ENV]?.trim() || undefined,
+  });
 }
