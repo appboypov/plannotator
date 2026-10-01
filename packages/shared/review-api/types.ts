@@ -126,6 +126,23 @@ export type Reply = {
   at: IsoTime;
 };
 
+/** A Remark as its Review page shows it: when it was stored, whether answered, and its Replies. */
+export type PageRemark = Remark & {
+  at: IsoTime;
+  status: "open" | "answered";
+  /** The Replies answering it, in order. */
+  replies: Reply[];
+};
+
+/** `GET <link>api/review-replies`: every Remark of every Round with its Replies. */
+export type ReviewRepliesResponse = {
+  review_id: ReviewId;
+  /** Every Remark of all Rounds, in store order. */
+  remarks: PageRemark[];
+  /** Replies naming no Remark. */
+  replies: Reply[];
+};
+
 /** A Review: one document's lasting link, its current Round and who listens. */
 export type Review = Round & {
   link: string;

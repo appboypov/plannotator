@@ -30,6 +30,9 @@ export const HEALTH_PATH = "/plannotator/health";
 /** Every page lives under this prefix, so ctas routes `/plannotator/*` here. */
 export const SESSION_PATH_PREFIX = "/plannotator/session/";
 
+/** `GET`, relative to a Review page's path: the Review's Remarks with their Replies. */
+export const PAGE_REPLIES_PATH = "api/review-replies";
+
 /** `POST`: a Reply on a Review. */
 export function repliesPath(reviewId: ReviewId): string {
   return `${REVIEWS_PATH}/${encodeURIComponent(reviewId)}/replies`;
