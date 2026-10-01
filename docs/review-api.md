@@ -222,7 +222,7 @@ An open Remark reaches each listener session once: it is replayed on a subscript
 { "type": "cancel", "id": "nt_0123456789abcdef01234567", "review_id": "0123456789abcdef", "round": 1, "at": "2026-10-01T10:00:00.000Z" }
 ```
 
-`FinishNotice` is the reviewer's Approve; `notes` (Plannotator's addition) carries the Approve's notes, `""` without notes. `CancelNotice` is an agent's Cancel. `round` is the Round the notice closed. A Send feedback's Remarks arrive before a Finish written after them.
+`FinishNotice` is the reviewer's Approve or Close; `notes` (Plannotator's addition) carries the Approve's notes, `""` without notes or for Close, and `dismissed: true` (Plannotator's addition, absent on Approve) marks a Close. `CancelNotice` is an agent's Cancel. `round` is the Round the notice closed. A Send feedback's Remarks arrive before a Finish written after them.
 
 Live only, never replayed:
 
@@ -252,8 +252,23 @@ plannotator serve [--port <n>]   # 127.0.0.1:4397; --port, else PLANNOTATOR_SERV
 - The page at `/plannotator/session/<review_id>/` is upstream's plan page: the service starts upstream's annotate server for the Review's document on first request, on a free loopback port, and forwards `/plannotator/session/<review_id>/<rest>` to `/<rest>` on it (ADR 0005). `GET /plannotator/session/<review_id>/api/plan` returns the document. A page that cannot start answers HTTP 502 `page failed to start: <reason>`.
 - Send feedback (`POST /plannotator/session/<review_id>/api/feedback`, upstream's body) is the service's own: each entry of `annotations` becomes one Remark of the current Round (anchor `selector` from `blockId`, `tag` from `type`, `text` from `originalText`), stored before the answer `{ "ok": true }` and sent to the Review's listeners. The page's sent draft is cleared first; when that fails the answer is HTTP 502 and nothing is stored. The page server never sees it, so the reviewer can send feedback again.
 - A Review's notices live next to it, in `<reviews dir>/<review_id>/notices.json`: `{ "notices": [ … ] }`, each a Finish or Cancel `Notice` with `status` (`pending`, or `acknowledged` with `acknowledged_at` once a listener acks it). A pending notice is replayed to every subscription that adds its Review until it is acknowledged.
-- The page's Round-checked commands are answered by the service, not the upstream page server (ADR 0006): Send feedback (`api/feedback`) stores Remarks; Approve (`api/approve`) finishes the Round with a Finish notice whose `notes` are the page's `feedback` text (`""` without notes; its annotations are not Remarks); Close (`api/exit`) finishes it with empty notes. Each takes an optional `round` (body field; `?round=` for Close): not a positive integer answers 400 `round must be a positive integer`, an ended Round answers 409 `ended`, another Round answers 409 `stale-round`, and nothing is written. The page's own Round stream (`<link>api/review-round`, an event stream of `Round`) sends the Round on connect and whenever it ends or the next opens; the page's HTML pins the Round it was loaded in (`<meta name="plannotator-review-round">`), and the page sends that Round with each command and closes itself when the Round is over for it.
+- The page's Round-checked commands are answered by the service, not the upstream page server (ADR 0006): Send feedback (`api/feedback`) stores Remarks; Approve (`api/approve`) finishes the Round with a Finish notice whose `notes` are the page's `feedback` text (`""` without notes; its annotations are not Remarks); Close (`api/exit`) finishes it with empty notes and `dismissed: true`. Each takes an optional `round` (body field; `?round=` for Close): not a positive integer answers 400 `round must be a positive integer`, an ended Round answers 409 `ended`, another Round answers 409 `stale-round`, and nothing is written. The page's own Round stream (`<link>api/review-round`, an event stream of `Round`) sends the Round on connect and whenever it ends or the next opens; the page's HTML pins the Round it was loaded in (`<meta name="plannotator-review-round">`), and the page sends that Round with each command and closes itself when the Round is over for it.
 - Built so far: everything but Replies: version, health, open (with `user-ended`, `reopen` and the next Round on the same link), list, Visibility, Cancel, the page, Remarks, notices and the listen socket. Not yet built, answering HTTP 404 `not found`: Replies. Until they land, build clients of that route against the stub below.
+
+## `plannotator annotate` through the service
+
+`plannotator annotate <file> [--gate] [--json]` on a local file is a client of the running service (`apps/hook/server/annotate-service.ts`), so any number of calls on different files run at once:
+
+1. It checks `GET /api/review/version` on `127.0.0.1:<port>`, the port in `PLANNOTATOR_SERVICE_PORT`, else 4397 (the same setting as `plannotator serve`).
+2. It opens the file's Review with `{ "file": <absolute path>, "reopen": true }`, so a call on an ended Review starts its next Round on the same link, prints the link to stderr and opens it in the browser (upstream's `PLANNOTATOR_BROWSER`, `PLANNOTATOR_SKIP_BROWSER_OPEN` and Glimpse settings apply).
+3. It listens on the listen socket with its own session id (`plannotator-annotate-<pid>-<hex>`), subscribed to that Review only, and takes only the opened Round's records; it acknowledges the Finish or Cancel notice it ends on. It reconnects when the socket drops.
+4. It prints the outcome in upstream's shapes (`--json`: `{"decision":"approved"}`, `{"decision":"approved","feedback":<notes>}`, `{"decision":"dismissed"}`, `{"decision":"annotated","feedback":<markdown>}`; `--gate` and the strict exit codes as upstream):
+   - Approve finishes the call as approved, with the Approve's notes as feedback when there are any.
+   - Close (`dismissed: true`) finishes it as dismissed.
+   - Send feedback: the call cancels the Round itself, so one call is one Round, and prints the Remarks as upstream's "File Feedback" markdown. The next call opens the next Round.
+   - Another agent's Cancel of the Round, with no Remarks taken, fails the call: `Round <n> of <link> was cancelled by another agent.`
+
+When nothing answers, the call fails with exit code 1 (2 under a strict flag) and tells how to start the service; it does not fall back to upstream's one-shot server, so a stopped service is never hidden. URLs, folders, `--markdown`, live apps and `--tailscale` keep upstream's one-shot server, since the service has no page for them.
 
 ## Stub server
 

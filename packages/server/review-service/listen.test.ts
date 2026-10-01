@@ -320,7 +320,7 @@ describe("Rounds, Approve, Cancel and list", () => {
     expect(later.messages.filter((frame) => frame.type === "error")).toEqual([]);
   });
 
-  test("Approve without notes, and Close, finish with empty notes", async () => {
+  test("Approve without notes, and Close, finish with empty notes; only Close is dismissed", async () => {
     await start();
     const first = await openReview("plan.md");
     const second = await openReview("brief.md");
@@ -329,11 +329,13 @@ describe("Rounds, Approve, Cancel and list", () => {
 
     let finish = listener.until("finish");
     expect((await post(`${first.link}api/approve`, { draftGeneration: 1 })).status).toBe(200);
-    expect((await finish).at(-1)).toMatchObject({ review_id: first.review_id, notes: "" });
+    const approved = (await finish).at(-1);
+    expect(approved).toMatchObject({ review_id: first.review_id, notes: "" });
+    expect(approved).not.toHaveProperty("dismissed");
 
     finish = listener.until("finish");
     expect((await post(`${second.link}api/exit?generation=1&round=1`)).status).toBe(200);
-    expect((await finish).at(-1)).toMatchObject({ review_id: second.review_id, notes: "" });
+    expect((await finish).at(-1)).toMatchObject({ review_id: second.review_id, notes: "", dismissed: true });
   });
 
   test("a finished Review reopens only when asked, into the next Round on the same link with the current document", async () => {

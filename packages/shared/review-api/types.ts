@@ -240,8 +240,14 @@ export type FinishNotice = {
   review_id: ReviewId;
   round: number;
   at: IsoTime;
-  /** The Approve's notes; `""` for an Approve without notes. */
+  /** The Approve's notes; `""` for an Approve without notes, and for a Close. */
   notes: string;
+  /**
+   * Plannotator's addition: `true` when the reviewer closed the page (Close) instead of
+   * approving, which upstream's annotate reports as `dismissed`. Absent on an Approve;
+   * Lavish clients ignore it.
+   */
+  dismissed?: true;
 };
 
 /** Server: an agent cancelled the Round. */

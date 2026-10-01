@@ -39,12 +39,30 @@ export function resolveServiceSettings(
     }
   }
 
+  const port = parsePort(portText);
+  if (!port.ok) return port;
+
+  const reviewsDirText = env[REVIEWS_DIR_ENV]?.trim();
+  const reviewsDir = reviewsDirText ? resolve(reviewsDirText) : join(getPlannotatorDataDir(), "reviews");
+  return { ok: true, value: { port: port.value, reviewsDir } };
+}
+
+/**
+ * The port a client such as `plannotator annotate` finds the service on: the same
+ * `PLANNOTATOR_SERVICE_PORT` setting `serve` reads, else 4397. `0` is refused, since a
+ * client cannot reach a port the service picked for itself.
+ */
+export function resolveServicePort(env: NodeJS.ProcessEnv = process.env): Parsed<number> {
+  const port = parsePort(env[SERVICE_PORT_ENV]?.trim() || undefined);
+  if (port.ok && port.value === 0) return { ok: false, error: `${SERVICE_PORT_ENV} must name the service's port, got 0` };
+  return port;
+}
+
+/** [portText] as a port from 0 to 65535; absent is 4397. */
+function parsePort(portText: string | undefined): Parsed<number> {
   const port = portText === undefined ? SERVICE_PORT : Number(portText);
   if (!Number.isInteger(port) || port < 0 || port > 65535 || (portText !== undefined && !/^\d+$/.test(portText))) {
     return { ok: false, error: `port must be an integer from 0 to 65535, got ${JSON.stringify(portText)}` };
   }
-
-  const reviewsDirText = env[REVIEWS_DIR_ENV]?.trim();
-  const reviewsDir = reviewsDirText ? resolve(reviewsDirText) : join(getPlannotatorDataDir(), "reviews");
-  return { ok: true, value: { port, reviewsDir } };
+  return { ok: true, value: port };
 }

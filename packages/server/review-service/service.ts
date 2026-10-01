@@ -266,7 +266,9 @@ export async function startReviewService(options: ReviewServiceOptions): Promise
    * - Approve: finishes the Round with a Finish notice whose `notes` are the page's
    *   `feedback` text (`""` without notes).
    * - Close (`api/exit`): finishes the Round like an Approve without notes, as upstream's
-   *   gate lets a dismissed review pass. Its `round` and draft generation are queries.
+   *   gate lets a dismissed review pass, and marks the notice `dismissed` so a client that
+   *   prints upstream's decisions (`plannotator annotate`) can tell it from an Approve.
+   *   Its `round` and draft generation are queries.
    * A `round` that is not the open Round answers 409 and writes nothing. The service first
    * clears the sent draft on the page server, as upstream's own routes do; when that
    * fails nothing is stored, so a reload cannot bring back what was already sent.
@@ -301,7 +303,12 @@ export async function startReviewService(options: ReviewServiceOptions): Promise
       }
     } else {
       const notes = field(body, "feedback");
-      await endRound(current, { type: "finish", notes: typeof notes === "string" ? notes : "" });
+      await endRound(
+        current,
+        command === "exit"
+          ? { type: "finish", notes: "", dismissed: true }
+          : { type: "finish", notes: typeof notes === "string" ? notes : "" },
+      );
     }
     return Response.json({ ok: true });
   }
@@ -313,11 +320,14 @@ export async function startReviewService(options: ReviewServiceOptions): Promise
    */
   async function endRound(
     review: StoredReview,
-    end: { type: "finish"; notes: string } | { type: "cancel" },
+    end: { type: "finish"; notes: string; dismissed?: true } | { type: "cancel" },
   ): Promise<StoredReview> {
     const at = new Date().toISOString();
     const fields = { id: recordId("nt"), review_id: review.review_id, round: review.round, at, status: "pending" } as const;
-    const notice: StoredNotice = end.type === "finish" ? { type: "finish", ...fields, notes: end.notes } : { type: "cancel", ...fields };
+    const notice: StoredNotice =
+      end.type === "finish"
+        ? { type: "finish", ...fields, notes: end.notes, ...(end.dismissed ? { dismissed: true as const } : {}) }
+        : { type: "cancel", ...fields };
     const ended: StoredReview = { ...review, state: end.type === "finish" ? "finished" : "cancelled" };
     await Promise.all([store.save(ended), records.addNotice(notice)]);
     log(`${ended.state} round ${ended.round} of Review ${ended.review_id}`);

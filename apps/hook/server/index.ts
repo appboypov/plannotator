@@ -191,6 +191,7 @@ import {
 } from "./cli";
 import { exitOnUnknownSubcommand } from "./unknown-subcommand";
 import { completeAnnotateCommand } from "./annotate-command";
+import { annotatesThroughService, runServiceAnnotateCommand } from "./annotate-service"; // Fork: annotate through the review service
 import { runServeCommand } from "./serve-command"; // fork: review service
 import {
   annotateStartupFailureExitCode,
@@ -1453,6 +1454,25 @@ if (args[0] === "sessions") {
     exitAnnotateStartupFailure(
       "Live app annotation is unavailable with --tailscale (the session is reachable across your tailnet). Run without --tailscale, or use --static to annotate a converted snapshot of the page.",
     );
+  }
+
+  // Fork: a local file opens its Review in the review service (annotate-service.ts).
+  if (
+    annotatesThroughService({
+      isUrl: !!isUrl,
+      folderPath,
+      liveApp: !!liveAppResolved,
+      tailscale: tailscaleFlag,
+      renderMarkdown: renderMarkdownFlag,
+    })
+  ) {
+    await runServiceAnnotateCommand({
+      file: absolutePath,
+      requireApproval: requireApprovalFlag,
+      resultFile,
+      emitLegacyOutcome: emitAnnotateOutcome,
+      fail: exitAnnotateStartupFailure,
+    });
   }
 
   const annotateProject = (await detectProjectName()) ?? "_unknown";

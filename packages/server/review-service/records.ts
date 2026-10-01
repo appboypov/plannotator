@@ -306,7 +306,9 @@ function parseNotice(value: unknown, reviewId: ReviewId): StoredNotice | undefin
     status,
     ...(acknowledgedAt === undefined ? {} : { acknowledged_at: acknowledgedAt }),
   };
-  if (type === "finish" && typeof notes === "string") return { type, ...kept, notes };
+  if (type === "finish" && typeof notes === "string") {
+    return { type, ...kept, notes, ...(field(value, "dismissed") === true ? { dismissed: true } : {}) };
+  }
   if (type === "cancel") return { type, ...kept };
   return undefined;
 }

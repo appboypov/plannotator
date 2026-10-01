@@ -23,7 +23,9 @@ PLANNOTATOR_REVIEWS_DIR=/tmp/pn-reviews bun apps/hook/server/index.ts serve --po
 
 Code: `packages/server/review-service/` and `apps/hook/server/serve-command.ts`. Contract: `docs/review-api.md`.
 
-The plan page calls upstream's root `/api/...` paths; under a session path `packages/shared/review-api/page-base.ts`, installed first by `apps/hook/review-page-base.ts`, sends those `fetch`, `EventSource`, `WebSocket` and image calls to `<page path>api/...`. A plain `plannotator annotate` page is untouched.
+The plan page calls upstream's root `/api/...` paths; under a session path `packages/shared/review-api/page-base.ts`, installed first by `apps/hook/review-page-base.ts`, sends those `fetch`, `EventSource`, `WebSocket` and image calls to `<page path>api/...`.
+
+`plannotator annotate <file> [--gate] [--json]` on a local file goes through the running service (`apps/hook/server/annotate-service.ts`): it opens or reopens the file's Review on the port in `PLANNOTATOR_SERVICE_PORT` (else 4397), prints the link, waits for the Round's end on the listen socket and prints upstream's outcome. Calls on different files run at once. With no service it fails and says to run `plannotator serve`. URLs, folders, `--markdown`, live apps and `--tailscale` keep upstream's one-shot server. See "`plannotator annotate` through the service" in `docs/review-api.md`.
 
 ## Check
 
