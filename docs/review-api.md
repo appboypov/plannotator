@@ -51,7 +51,7 @@ The route is unversioned, so a client can read any major. A client that supports
 { "ok": true, "app": "plannotator", "version": "0.27.23", "api": { "major": 1, "minor": 0 } }
 ```
 
-`version` is the fork build version.
+`version` is the fork build version, such as `0.27.23-appboypov.da228139`. When launchd runs the service (`plannotator service install`), health adds `"service": { "label": "nl.de-appspecialist.plannotator" }`.
 
 ## Open a Review
 

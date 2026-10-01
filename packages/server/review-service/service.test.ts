@@ -186,6 +186,12 @@ describe("review service", () => {
     expect(await (await fetch(`${service!.url}/api/review/version`)).json()).toEqual({ major: 1, minor: 0 });
   });
 
+  test("names the LaunchAgent in health when launchd runs it", async () => {
+    service = await startReviewService({ port: 0, reviewsDir, version: "test", startPage, log: () => {}, serviceLabel: "nl.de-appspecialist.plannotator" });
+    const health = await (await fetch(`${service.url}/plannotator/health`)).json();
+    expect(health.service).toEqual({ label: "nl.de-appspecialist.plannotator" });
+  });
+
   test("refuses what the contract refuses and writes nothing", async () => {
     await start();
     expect((await open("relative/plan.md")).status).toBe(400);

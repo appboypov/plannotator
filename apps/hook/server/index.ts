@@ -192,6 +192,7 @@ import {
 import { exitOnUnknownSubcommand } from "./unknown-subcommand";
 import { completeAnnotateCommand } from "./annotate-command";
 import { runServeCommand } from "./serve-command"; // fork: review service
+import { liveServiceContext, runServiceCommand } from "./service-command"; // fork: review service LaunchAgent
 import {
   annotateStartupFailureExitCode,
   isStrictAnnotateInvocation,
@@ -575,6 +576,11 @@ if (args[0] === "install-runtime") {
     : await installAgentTerminalRuntime();
   console.log(result.message);
   process.exit(result.ok ? 0 : 1);
+}
+
+if (args[0] === "service") {
+  // Fork: the review service's LaunchAgent (fork/README.md).
+  process.exit(await runServiceCommand(args.slice(1), liveServiceContext(getCliVersion())));
 }
 
 if (isInteractiveNoArgInvocation(args, process.stdin.isTTY)) {

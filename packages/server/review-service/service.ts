@@ -66,6 +66,8 @@ export type ReviewServiceOptions = {
   hostname?: string;
   /** The ngrok origin of `temporary` links until story 1.11's setting names another. */
   temporaryOrigin?: string;
+  /** The LaunchAgent label health names when launchd runs the service (`plannotator service install`). */
+  serviceLabel?: string;
   log?: (line: string) => void;
   /** How often listeners are pinged; the contract's 30 seconds unless a test names another. */
   heartbeatMs?: number;
@@ -161,7 +163,13 @@ export async function startReviewService(options: ReviewServiceOptions): Promise
   }
 
   function health(): Response {
-    return Response.json({ ok: true, app: "plannotator", version: options.version, api: API_VERSION } satisfies HealthResponse);
+    return Response.json({
+      ok: true,
+      app: "plannotator",
+      version: options.version,
+      api: API_VERSION,
+      ...(options.serviceLabel ? { service: { label: options.serviceLabel } } : {}),
+    } satisfies HealthResponse);
   }
 
   /** A Review page path (`/plannotator/session/<id>/...`), from this Mac or through a door. */
