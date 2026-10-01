@@ -11,7 +11,7 @@ The live service is one process, `plannotator serve` run by the LaunchAgent `nl.
 | `4397` (service) | `127.0.0.1` only | Any process on this Mac. Requests must carry `Host` `127.0.0.1:4397` or `localhost:4397`; a `POST` or listen handshake with an `Origin` or `Referer` from another origin gets 403 `forbidden`. Header-less clients (the CLI, the plugin, `curl`) pass. | The bind address; `isLocalRequest` in `packages/shared/review-api/parse.ts`. |
 | `4399` (public door) | `100.111.186.85`, this Mac's Tailscale address | Only `100.67.134.112`, the VPS. Its Caddy routes `https://ctas.de-appspecialist.nl/plannotator/*` here; nobody else reaches this port. | The peer check in `packages/server/review-service/doors.ts`, before a byte is read. |
 | `4398` (temporary door) | `127.0.0.1` | Only `127.0.0.1`: the ngrok agent on this Mac, run as `ngrok http 4398 --url=<PLANNOTATOR_TEMPORARY_ORIGIN>`. | The bind address and the same peer check; neither is a setting. |
-| one free loopback port per open Review page | `127.0.0.1` | Only the service, which forwards `/plannotator/session/<review_id>/<rest>` to `/<rest>` there. | `pages.ts`; nothing else is told the port. |
+| one free loopback port per open Review page | `127.0.0.1` | Any process on this Mac, like the service port; the service is the only one told the port, and forwards `/plannotator/session/<review_id>/<rest>` to `/<rest>` there. The doors never reach it except through the service. | The bind address; `pages.ts` keeps the port to itself. |
 
 Ports 4397, 4398 and 4399 are the live values; `PLANNOTATOR_SERVICE_PORT`, `PLANNOTATOR_TEMPORARY_PORT` and `PLANNOTATOR_PUBLIC_HOST`/`_PORT`/`_PEER` move them. Lavish runs its own ports beside them; the two services never share one.
 
@@ -27,7 +27,7 @@ Ports 4397, 4398 and 4399 are the live values; `PLANNOTATOR_SERVICE_PORT`, `PLAN
 ## State
 
 - **One process owns a reviews folder.** Each Review is a folder `<reviews dir>/<review_id>/` with `review.json`, `remarks.json`, `notices.json` and `replies.json`. The service holds all of them in memory and rewrites a file atomically (temporary file, then `rename`), one write per file at a time (`ReviewRecords.write`). Two services on one folder would overwrite each other, so a dev run uses its own `PLANNOTATOR_REVIEWS_DIR`.
-- **A Review's id is derived, not secret.** It is the first 16 hex characters of the SHA-256 of the file's canonical path (symlinks resolved), so the same file always gets the same link. Knowing an id is not authority: a `local` Review's page answers only on 4397, and a door checks Visibility.
+- **A Review's id is derived, not secret.** It is the first 16 hex characters of the SHA-256 of the file's canonical path (symlinks resolved), so the same file always gets the same link. Knowing an id is not authority: a `local` Review's page answers only to processes on this Mac (the loopback service port), and a door checks Visibility.
 - **Survives restarts.** The service loads every folder at start; a malformed `review.json` is skipped with one log line and left on disk. Remarks keep the listener sessions they reached (`delivered_to`), so a reconnect under the same session id does not replay them, while a new session receives every open Remark.
 - **Nothing is lost while no one listens.** Send feedback stores its Remarks before it answers `{ "ok": true }`; Finish and Cancel notices stay `pending` until any listener acknowledges them. A subscription replays open Remarks, then pending notices, in store order, before `subscribed`.
 

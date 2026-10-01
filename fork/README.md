@@ -41,7 +41,7 @@ curl -s -X POST http://127.0.0.1:4397/api/review/v1/reviews \
 # {"review_id":"…","link":"http://127.0.0.1:4397/plannotator/session/…/","status":"opened","round":1,"visibility":"local"}
 ```
 
-Opening the same file again gives the same link; when its Round has ended it starts the next Round there. End a Round from the agent side with `curl -s -X POST http://127.0.0.1:4397/api/review/v1/reviews/<review_id>/cancel`.
+Opening the same file again gives the same link. After an agent's Cancel it starts the next Round there; after the reviewer's Approve or Close it answers `"status": "user-ended"` and changes nothing unless the request adds `"reopen": true` (as `plannotator annotate` does). End a Round from the agent side with `curl -s -X POST http://127.0.0.1:4397/api/review/v1/reviews/<review_id>/cancel`.
 
 ## Doors and ports
 
@@ -53,7 +53,7 @@ The service is one process with up to three listeners. Each serves a fixed set o
 | Public | `100.111.186.85:4399` (this Mac's Tailscale address) | Only `100.67.134.112`, the VPS, whose Caddy routes `https://ctas.de-appspecialist.nl/plannotator/*` to it. | Health and the pages of `public` Reviews. |
 | Temporary | `127.0.0.1:4398` | Only `127.0.0.1`, the ngrok agent on this Mac (`ngrok http 4398 --url=https://knowledgeably-supersweet-kizzie.ngrok-free.dev`). | Health and the pages of `temporary` Reviews, for that one host. |
 
-The two doors answer 404 to the review API, the listen socket, every WebSocket and every page route outside their list (`packages/server/review-service/door-manifest.ts`), and to any Review whose Visibility is not theirs at the moment of the request. Each Review page also runs an upstream annotate server on a free loopback port that only the service talks to. A door opens only when its port setting is set: the LaunchAgent sets both, and `plannotator serve` run by hand in a shell without `PLANNOTATOR_PUBLIC_PORT` and `PLANNOTATOR_TEMPORARY_PORT` opens none. Details: "The doors" in `docs/review-api.md`, `adr/0007-doors-serve-only-their-visibility.md`.
+The two doors answer 404 to the review API, the listen socket, every WebSocket and every page route outside their list (`packages/server/review-service/door-manifest.ts`), and to any Review whose Visibility is not theirs at the moment of the request. Each Review page also runs an upstream annotate server on a free loopback port, which only the service is told and forwards to. A door opens only when its port setting is set: the LaunchAgent sets both, and `plannotator serve` run by hand in a shell without `PLANNOTATOR_PUBLIC_PORT` and `PLANNOTATOR_TEMPORARY_PORT` opens none. Details: "The doors" in `docs/review-api.md`, `adr/0007-doors-serve-only-their-visibility.md`.
 
 ## Visibility
 
