@@ -109,6 +109,15 @@ export function parseVisibilityRequest(body: unknown): Parsed<VisibilityRequest>
   return visibility ? { ok: true, value: { visibility } } : refuse(ERRORS.visibility);
 }
 
+/**
+ * The optional `round` of a Round-checked page command (Send feedback, Approve, Close):
+ * undefined when absent, else a positive integer.
+ */
+export function parsePageRound(round: unknown): Parsed<number | undefined> {
+  if (round === undefined) return { ok: true, value: undefined };
+  return typeof round === "number" && Number.isInteger(round) && round > 0 ? { ok: true, value: round } : refuse(ERRORS.round);
+}
+
 /** The `session` query of the listen handshake: a nonblank omp session id. */
 export function parseListenSession(session: string | null): Parsed<SessionId> {
   return session?.trim() ? { ok: true, value: session } : refuse(ERRORS.sessionRequired);
