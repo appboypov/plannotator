@@ -23,6 +23,8 @@ PLANNOTATOR_REVIEWS_DIR=/tmp/pn-reviews bun apps/hook/server/index.ts serve --po
 
 Code: `packages/server/review-service/` and `apps/hook/server/serve-command.ts`. Contract: `docs/review-api.md`.
 
+The plan page calls upstream's root `/api/...` paths; under a session path `packages/shared/review-api/page-base.ts`, installed first by `apps/hook/review-page-base.ts`, sends those `fetch`, `EventSource`, `WebSocket` and image calls to `<page path>api/...`. A plain `plannotator annotate` page is untouched.
+
 ## Check
 
 GitHub Actions is off for this fork. The check runs on the VPS through Crabbox:

@@ -1,3 +1,5 @@
+// Fork: first, so a Review page's API calls go to its own path before any module calls them.
+import './review-page-base';
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import App from '@plannotator/editor';
