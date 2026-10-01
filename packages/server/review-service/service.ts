@@ -49,6 +49,7 @@ import type { Server } from "bun";
 import { PAGE_ROUND_META, PAGE_ROUND_PATH } from "@plannotator/shared/review-api/page-round";
 import { ReviewListeners, listenData, type ListenData } from "./listen.ts";
 import { PageRounds } from "./page-rounds.ts";
+import { startDoor, type Door, type DoorListen } from "./doors.ts";
 import { ReviewPages, type StartReviewPage } from "./pages.ts";
 import { ReviewRecords, openRemark, recordId, remarksFromFeedback, type StoredNotice } from "./records.ts";
 import { ReviewStore, reviewIdForFile, type StoredReview } from "./store.ts";
@@ -70,13 +71,19 @@ export type ReviewServiceOptions = {
   log?: (line: string) => void;
   /** How often listeners are pinged; the contract's 30 seconds unless a test names another. */
   heartbeatMs?: number;
+  /** The public door for ctas (ADR 0007); none when null or absent. */
+  publicDoor?: DoorListen | null;
+  /** Requests per visitor per minute through a door; 300 unless a test names another. */
+  doorRateLimit?: number;
 };
 
 export type ReviewService = {
   /** The service's own origin, such as `http://127.0.0.1:4397`. */
   url: string;
   port: number;
-  /** Stops every page and the server. Review state stays on disk. */
+  /** The doors that were started, bound or still retrying their bind. */
+  doors: Door[];
+  /** Stops every page, the doors and the server. Review state stays on disk. */
   stop: () => Promise<void>;
 };
 
@@ -108,6 +115,7 @@ export async function startReviewService(options: ReviewServiceOptions): Promise
   const pages = new ReviewPages(options.startPage);
   const pageRounds = new PageRounds();
   let origins: LinkOrigins;
+  const doors: Door[] = [];
 
   const summary = (review: StoredReview): Review => ({
     ...review,
@@ -137,15 +145,7 @@ export async function startReviewService(options: ReviewServiceOptions): Promise
     }
 
     if (method === "GET" && pathname === VERSION_PATH) return Response.json(API_VERSION);
-    if (method === "GET" && pathname === HEALTH_PATH) {
-      return Response.json({
-        ok: true,
-        app: "plannotator",
-        version: options.version,
-        api: API_VERSION,
-        ...(options.serviceLabel ? { service: { label: options.serviceLabel } } : {}),
-      } satisfies HealthResponse);
-    }
+    if (method === "GET" && pathname === HEALTH_PATH) return health();
     if (pathname === REVIEWS_PATH && method === "POST") return open(await readJson(request));
     if (pathname === REVIEWS_PATH && method === "GET") return list(url.searchParams.get("file"));
 
@@ -158,20 +158,35 @@ export async function startReviewService(options: ReviewServiceOptions): Promise
       return reviewMatch[2] === "replies" ? reply(review, body) : setVisibility(review, body);
     }
 
-    if (pathname.startsWith(SESSION_PATH_PREFIX)) {
-      const [reviewId, ...rest] = pathname.slice(SESSION_PATH_PREFIX.length).split("/");
-      const review = store.get(reviewId);
-      if (!review) return error(404, ERRORS.reviewNotFound);
-      // The page calls its API relative to its own path, which needs the trailing slash.
-      if (rest.length === 0) return Response.redirect(`${reviewPagePath(reviewId)}${url.search}`, 308);
-      const path = `/${rest.join("/")}`;
-      const command = method === "POST" ? PAGE_COMMANDS[path] : undefined;
-      if (command) return pageCommand(command, review, request, url);
-      if (method === "GET" && path === ROUND_STREAM_PATH) return pageRounds.stream(roundOf(review));
-      if (method === "GET" && path === REPLIES_PAGE_PATH) return Response.json(records.page(review.review_id));
-      return page(request, review, path, url.search);
-    }
+    if (pathname.startsWith(SESSION_PATH_PREFIX)) return sessionRoute(request);
     return error(404, "not found");
+  }
+
+  function health(): Response {
+    return Response.json({
+      ok: true,
+      app: "plannotator",
+      version: options.version,
+      api: API_VERSION,
+      ...(options.serviceLabel ? { service: { label: options.serviceLabel } } : {}),
+    } satisfies HealthResponse);
+  }
+
+  /** A Review page path (`/plannotator/session/<id>/...`), from this Mac or through a door. */
+  async function sessionRoute(request: Request): Promise<Response> {
+    const url = new URL(request.url);
+    const method = request.method;
+    const [reviewId, ...rest] = url.pathname.slice(SESSION_PATH_PREFIX.length).split("/");
+    const review = store.get(reviewId);
+    if (!review) return error(404, ERRORS.reviewNotFound);
+    // The page calls its API relative to its own path, which needs the trailing slash.
+    if (rest.length === 0) return Response.redirect(`${reviewPagePath(reviewId)}${url.search}`, 308);
+    const path = `/${rest.join("/")}`;
+    const command = method === "POST" ? PAGE_COMMANDS[path] : undefined;
+    if (command) return pageCommand(command, review, request, url);
+    if (method === "GET" && path === ROUND_STREAM_PATH) return pageRounds.stream(roundOf(review));
+    if (method === "GET" && path === REPLIES_PAGE_PATH) return Response.json(records.page(review.review_id));
+    return page(request, review, path, url.search);
   }
 
   async function open(body: unknown): Promise<Response> {
@@ -253,6 +268,8 @@ export async function startReviewService(options: ReviewServiceOptions): Promise
     const current = store.get(review.review_id) ?? review;
     const updated = { ...current, visibility: parsed.value.visibility };
     if (updated.visibility !== current.visibility) await store.save(updated);
+    // A door stops serving the Review at once: its open requests through the door close.
+    for (const door of doors) door.revoke(updated.review_id, updated.visibility);
     return Response.json({
       review_id: updated.review_id,
       visibility: updated.visibility,
@@ -419,12 +436,34 @@ export async function startReviewService(options: ReviewServiceOptions): Promise
   };
   log(`review service listening on ${url} with ${store.all().length} Review(s) in ${store.dir}`);
 
+  const doorOptions = {
+    visibilityOf: (reviewId: string) => store.get(reviewId)?.visibility,
+    health,
+    page: sessionRoute,
+    log,
+    limit: options.doorRateLimit,
+  };
+  if (options.publicDoor) {
+    const { host } = options.publicDoor;
+    doors.push(
+      startDoor({
+        ...options.publicDoor,
+        ...doorOptions,
+        visibility: "public",
+        // Caddy passes the visitor's Host (ctas); the VPS may also call the door's own address.
+        hostnames: [new URL(PUBLIC_ORIGIN).hostname, host],
+      }),
+    );
+  }
+
   return {
     url,
     port: server.port ?? options.port,
+    doors,
     stop: async () => {
       listeners.stop();
       pageRounds.stop();
+      await Promise.all(doors.map((door) => door.stop()));
       await pages.stopAll();
       server.stop(true);
       await records.settled();
