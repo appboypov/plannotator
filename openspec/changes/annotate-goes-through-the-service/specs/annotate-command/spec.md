@@ -23,6 +23,12 @@
 - **THEN** the call cancels the Round and prints `annotated` with the page's feedback text
 - **AND** the next call on the file opens the next Round on the same link
 
+#### Scenario: Feedback, then Approve before the call's Cancel
+
+- **GIVEN** an annotate call waits on its Round
+- **WHEN** the reviewer sends feedback and approves before the call cancels the Round
+- **THEN** the command prints `annotated` with the feedback, not `approved`
+
 #### Scenario: Two files at once
 
 - **GIVEN** the service runs

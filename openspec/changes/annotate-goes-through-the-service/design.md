@@ -11,7 +11,7 @@ The service (stories 1.3 to 1.6 and Replies) answers every review API route. Ups
 - Open always sends `reopen: true`, so a call on an approved or cancelled Review starts its next Round, as a fresh upstream annotate did.
 - One call is one Round. It listens with its own session id `plannotator-annotate-<pid>-<hex>`, subscribed to its Review only, and ignores records of another Review or Round, so open Remarks and pending notices of earlier Rounds replay harmlessly.
   - Remarks of its Round: the call collects them and cancels the Round once; the Cancel notice that follows ends the call as `annotated` with the page's feedback text of each send, once each; Remarks stored without that text are formatted like upstream's file export ("File Feedback").
-  - Finish: `dismissed: true` gives `dismissed`; otherwise `approved` with the notes (Remarks taken before an Approve come first).
+  - Finish: `dismissed: true` gives `dismissed`; otherwise `approved` with the notes. Once Remarks of the Round arrived, any end gives `annotated`: as on upstream's page the first decision wins, so an Approve that beat the call's Cancel does not pass the gate.
   - A Cancel with no Remarks taken is another agent's: the call fails with `Round <n> of <link> was cancelled by another agent.`
   - It acks the notice it ends on, then sends an empty subscribe and exits after its `subscribed` confirmation (or 2 s), since an ack gets no answer and the service takes frames in order.
   - A dropped socket reconnects (30 tries, 1 s apart) and the replay restores the Round's records.

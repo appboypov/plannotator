@@ -114,6 +114,16 @@ describe("plannotator annotate through the review service", () => {
     expect(await call.result).toEqual({ ok: true, outcome: { feedback: pageText } });
   });
 
+  test("feedback sent before an Approve stays the decision, as upstream's first decision wins", async () => {
+    await start();
+    const call = annotate(document("plan.md"));
+    const review = await call.opened;
+    expect((await post(`${review.link}api/feedback`, { round: 1, feedback: "Rework it.", annotations: [] })).status).toBe(200);
+    // Lands before or after the call's own Cancel; the call reports the feedback either way.
+    await post(`${review.link}api/approve`, { round: 1, feedback: "Ship it." });
+    expect(await call.result).toEqual({ ok: true, outcome: { feedback: "Rework it." } });
+  });
+
   test("Send feedback without the page's text prints its Remarks formatted, ends the Round, and the next call opens the next Round without it", async () => {
     await start();
     const file = document("plan.md");

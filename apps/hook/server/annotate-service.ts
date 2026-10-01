@@ -240,18 +240,13 @@ function waitForRound(
   const take = (ws: WebSocket, notice: Notice) => {
     ws.send(JSON.stringify({ type: "ack", id: notice.id }));
     const sent = [...remarks.values()];
-    if (notice.type === "cancel") {
-      if (sent.length > 0) settle({ ok: true, outcome: { feedback: feedbackOf(sent) } });
-      else settle({ ok: false, error: `Round ${review.round} of ${review.link} was cancelled by another agent.` });
-      return;
-    }
-    if (notice.dismissed) {
-      settle({ ok: true, outcome: sent.length > 0 ? { feedback: feedbackOf(sent) } : { feedback: "", exit: true } });
-      return;
-    }
-    // Feedback sent just before an Approve still reaches the agent, ahead of the notes.
-    const feedback = [sent.length > 0 ? feedbackOf(sent) : "", notice.notes].filter(Boolean).join("\n\n");
-    settle({ ok: true, outcome: { approved: true, feedback } });
+    // As on upstream's page the first decision wins: once feedback arrived, an Approve or
+    // Close that ended the Round before this call's Cancel landed does not turn it into one.
+    if (sent.length > 0) settle({ ok: true, outcome: { feedback: feedbackOf(sent) } });
+    else if (notice.type === "cancel") {
+      settle({ ok: false, error: `Round ${review.round} of ${review.link} was cancelled by another agent.` });
+    } else if (notice.dismissed) settle({ ok: true, outcome: { feedback: "", exit: true } });
+    else settle({ ok: true, outcome: { approved: true, feedback: notice.notes } });
   };
 
   const receive = (ws: WebSocket, frame: string) => {
