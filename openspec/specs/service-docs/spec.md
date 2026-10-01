@@ -1,7 +1,7 @@
 # service-docs Specification
 
 ## Purpose
-TBD - created by archiving change readme-and-invariants-describe-the-service. Update Purpose after archive.
+Where the fork documents its review service and what each document owns: `fork/README.md` (pointed to from the root `README.md`) for installing, opening documents, doors, Visibility, settings and updates; `docs/invariants.md` for ports, who may connect and the rules that are easy to break; `docs/review-api.md` for the wire contract.
 
 ## Requirements
 
