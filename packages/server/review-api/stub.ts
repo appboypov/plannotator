@@ -1,9 +1,10 @@
 /**
  * Review API v1 stub (fork-owned): answers every route of docs/review-api.md with
  * contract-valid placeholder data, so the plugin and the CLI can be built against the
- * contract before the service exists. Reviews live in memory; no page remark ever
- * arrives, so a Reply may name no Remark and an ack names no notice. The real service
- * (`plannotator serve`) replaces this file.
+ * contract before the service exists. Reviews, subscriptions and Cancel notices live in
+ * memory; no page exists, so no Remark, Finish, `page_open` or `listener` event ever
+ * arrives and a Reply may name no Remark. The real service (`plannotator serve`)
+ * replaces this file.
  *
  *   bun packages/server/review-api/stub.ts [port]    # default 4397 on 127.0.0.1
  */
@@ -28,6 +29,7 @@ import {
   parseReplyRequest,
   parseVisibilityRequest,
   reviewLink,
+  type CancelNotice,
   type CancelReviewResponse,
   type ErrorResponse,
   type HealthResponse,
@@ -38,6 +40,7 @@ import {
   type ReplyResponse,
   type Review,
   type ReviewId,
+  type Subscription,
   type UnknownRemarksResponse,
   type VisibilityResponse,
 } from "@plannotator/shared/review-api";
@@ -49,7 +52,7 @@ export type ReviewApiStubOptions = {
   temporaryOrigin?: string;
 };
 
-type Listener = { session: string };
+type Listener = { session: string; subscription: Subscription; sent: Set<string> };
 
 type StubReview = Pick<Review, "review_id" | "file" | "visibility" | "round" | "state" | "round_opened_at">;
 
@@ -61,15 +64,26 @@ export function startReviewApiStub(options: ReviewApiStubOptions = {}): Server<L
   const hostname = options.hostname ?? "127.0.0.1";
   const reviews = new Map<ReviewId, StubReview>();
   const sockets = new Map<string, ServerWebSocket<Listener>>();
+  const notices: { notice: CancelNotice; acked: boolean }[] = [];
   let origins: LinkOrigins;
+
+  const hears = (subscription: Subscription, reviewId: ReviewId) =>
+    subscription === "all" || subscription.includes(reviewId);
 
   const summary = (review: StubReview): Review => ({
     ...review,
     link: reviewLink(review.review_id, review.visibility, origins),
     open_item_count: 0,
     last_page_open: null,
-    listeners: [],
+    listeners: [...sockets.values()]
+      .filter((socket) => hears(socket.data.subscription, review.review_id))
+      .map((socket) => socket.data.session),
   });
+
+  function send(socket: ServerWebSocket<Listener>, message: ListenServerMessage): void {
+    if (message.type === "cancel") socket.data.sent.add(message.id);
+    socket.send(JSON.stringify(message));
+  }
 
   async function route(request: Request, server: Server<Listener>): Promise<Response | undefined> {
     const url = new URL(request.url);
@@ -91,7 +105,7 @@ export function startReviewApiStub(options: ReviewApiStubOptions = {}): Server<L
     if (method === "GET" && pathname === LISTEN_PATH) {
       const session = parseListenSession(url.searchParams.get("session"));
       if (!session.ok) return new Response(`${session.error}\n`, { status: 400 });
-      return server.upgrade(request, { data: { session: session.value } })
+      return server.upgrade(request, { data: { session: session.value, subscription: [], sent: new Set<string>() } })
         ? undefined
         : new Response("websocket upgrade required\n", { status: 400 });
     }
@@ -185,7 +199,18 @@ export function startReviewApiStub(options: ReviewApiStubOptions = {}): Server<L
   }
 
   function cancel(review: StubReview): Response {
-    if (review.state === "open") review.state = "cancelled";
+    if (review.state === "open") {
+      review.state = "cancelled";
+      const notice: CancelNotice = {
+        type: "cancel",
+        id: `nt_${randomBytes(12).toString("hex")}`,
+        review_id: review.review_id,
+        round: review.round,
+        at: new Date().toISOString(),
+      };
+      notices.push({ notice, acked: false });
+      for (const socket of sockets.values()) if (hears(socket.data.subscription, review.review_id)) send(socket, notice);
+    }
     const state = review.state === "finished" ? "finished" : "cancelled";
     return Response.json({ review_id: review.review_id, state, round: review.round } satisfies CancelReviewResponse);
   }
@@ -214,12 +239,22 @@ export function startReviewApiStub(options: ReviewApiStubOptions = {}): Server<L
       },
       message(socket, frame) {
         const parsed = parseListenClientMessage(typeof frame === "string" ? frame : frame.toString("utf8"));
-        const answer: ListenServerMessage = !parsed.ok
-          ? { type: "error", error: parsed.error }
-          : parsed.value.type === "subscribe"
-            ? { type: "subscribed", reviews: parsed.value.reviews }
-            : { type: "error", error: `unknown notice ${parsed.value.id}` };
-        socket.send(JSON.stringify(answer));
+        if (!parsed.ok) return send(socket, { type: "error", error: parsed.error });
+        const message = parsed.value;
+        if (message.type === "ack") {
+          const stored = notices.find((entry) => entry.notice.id === message.id);
+          if (!stored) return send(socket, { type: "error", error: `unknown notice ${message.id}` });
+          stored.acked = true;
+          return;
+        }
+        // Replay the pending notices of every Review the new subscription adds, once per socket.
+        const previous = socket.data.subscription;
+        socket.data.subscription = message.reviews;
+        for (const { notice, acked } of notices) {
+          const added = hears(message.reviews, notice.review_id) && !hears(previous, notice.review_id);
+          if (!acked && added && !socket.data.sent.has(notice.id)) send(socket, notice);
+        }
+        send(socket, { type: "subscribed", reviews: message.reviews });
       },
       close(socket) {
         if (sockets.get(socket.data.session) === socket) sockets.delete(socket.data.session);

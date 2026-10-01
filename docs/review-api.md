@@ -246,4 +246,4 @@ The server pings every 30 seconds and drops a listener that did not answer the p
 bun packages/server/review-api/stub.ts [port]   # default 4397 on 127.0.0.1
 ```
 
-Reviews live in memory. No page Remark ever arrives, so a Reply may answer no Remark, an `ack` names no notice, and the page is a placeholder. It applies the Host and Origin rule above (`isLocalRequest` in `parse.ts`). The service replaces it.
+Reviews, subscriptions and Cancel notices live in memory: a Cancel reaches every subscribed listener, a pending notice is replayed to a subscription that adds its Review until it is acknowledged, and the list reports each Review's listeners. No page exists, so no Remark, Finish, `page_open` or `listener` event ever arrives, a Reply may answer no Remark, and the page is a placeholder. It applies the Host and Origin rule above (`isLocalRequest` in `parse.ts`). The service replaces it.
