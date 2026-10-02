@@ -142,20 +142,24 @@ describe("plannotator annotate through the review service", () => {
     const listening = async () => ((await (await fetch(reviews)).json()).reviews[0]?.listeners ?? []).includes("annotate-test");
     while (!(await listening())) await Bun.sleep(10);
 
-    // Another socket under the same session id replaces the call's, and takes the Remark.
+    // Another socket under the same session id replaces the call's, takes the Remark as
+    // the Review's holder, and is gone; the call's reconnected socket then holds the Review.
     const thief = new WebSocket(`ws://127.0.0.1:${service!.port}/api/review/v1/listen?session=annotate-test`);
-    const subscribed = new Promise<void>((resolve) => {
-      thief.onmessage = (event) => {
-        if (JSON.parse(String(event.data)).type === "subscribed") resolve();
-      };
-    });
+    const subscribed = Promise.withResolvers<void>();
+    const taken = Promise.withResolvers<void>();
+    thief.onmessage = (event) => {
+      const type = JSON.parse(String(event.data)).type;
+      if (type === "subscribed") subscribed.resolve();
+      if (type === "feedback_item") taken.resolve();
+    };
     thief.onopen = () => thief.send(JSON.stringify({ type: "subscribe", reviews: [review!.review_id] }));
-    await subscribed;
+    await subscribed.promise;
     const annotations = [{ blockId: "block-1", type: "COMMENT", originalText: "First paragraph.", text: "Say who owns it." }];
     expect((await post(`${review!.link}api/feedback`, { round: 1, feedback: "Say who owns it.", annotations })).status).toBe(200);
+    await taken.promise;
+    thief.close();
 
     expect(await result).toEqual({ ok: true, outcome: { feedback: "Say who owns it." } });
-    thief.close();
   });
 
   test("Send feedback without the page's text prints its Remarks formatted, ends the Round, and the next call opens the next Round without it", async () => {

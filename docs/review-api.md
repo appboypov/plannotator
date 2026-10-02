@@ -38,17 +38,17 @@ The review API lives at the site root and the page under `/plannotator/`, so the
 `GET /api/review/version` returns HTTP 200 with `ApiVersion`:
 
 ```json
-{ "major": 1, "minor": 0 }
+{ "major": 1, "minor": 1 }
 ```
 
-The route is unversioned, so a client can read any major. A client that supports a different `major` must not open, listen or write. `minor` grows with additive changes a client may ignore. The constant is `API_VERSION`.
+The route is unversioned, so a client can read any major. A client that supports a different `major` must not open, listen or write. `minor` grows with changes a client may ignore: a new field, or a server message it no longer receives (ADR 0008). The constant is `API_VERSION`.
 
 ## Health
 
 `GET /plannotator/health` returns HTTP 200 with `HealthResponse` while the service runs:
 
 ```json
-{ "ok": true, "app": "plannotator", "version": "0.27.23", "api": { "major": 1, "minor": 0 } }
+{ "ok": true, "app": "plannotator", "version": "0.27.23", "api": { "major": 1, "minor": 1 } }
 ```
 
 `version` is the fork build version, such as `0.27.23-appboypov.da228139`. When launchd runs the service (`plannotator service install`), health adds `"service": { "label": "nl.de-appspecialist.plannotator" }`.
@@ -106,7 +106,7 @@ Errors: absent or blank `file` 400 `file path required`; a relative `file` 400 `
 }
 ```
 
-Each entry is a `Review`: a `Round` (`review_id`, `round`, `state` of `open`, `finished` or `cancelled`) plus its link, canonical file, Visibility, when the Round opened, how many Remarks are open across all Rounds, when the page was last loaded, and the sessions listening to it.
+Each entry is a `Review`: a `Round` (`review_id`, `round`, `state` of `open`, `finished` or `cancelled`) plus its link, canonical file, Visibility, when the Round opened, how many Remarks are open across all Rounds, when the page was last loaded, and the sessions in its line (see "One listener holds each Review"), the one that holds it first.
 
 With `?file=<absolute path>` (`ListReviewsQuery`) the list holds only that file's Review, and the entry adds `open_items`: its open Remarks as `OpenRemark` (a `Remark` plus `at`, when it was stored), in store order. A file never opened lists `{ "reviews": [] }`. A blank or relative `file` gets 400 `file must be an absolute path`. The list writes nothing.
 
@@ -224,9 +224,17 @@ The page reads this route each time its annotation panel opens and lists the Rem
 
 Connect a WebSocket to `/api/review/v1/listen?session=<omp session id>` on the local service. A missing or blank `session` gets HTTP 400 `session required` during the handshake. A second socket with the same session id replaces the first (the old one closes with code 1000) and starts subscribed to nothing. Every frame is one UTF-8 JSON text frame; a client frame over 64 KiB closes the socket (1009).
 
+### One listener holds each Review
+
+Each Review has a line of the listeners whose subscription includes it: first the listeners whose subscription names the Review, in the order they started naming it, then the listeners subscribed to `"all"`, in the order they subscribed to all. A listener keeps its place while each later subscription keeps the Review the same way (named, or under `"all"`); a new socket joins the back of its group, also when it replaces a socket of the same session. The first listener in the line holds the Review: its Remarks, Finish notices and Cancel notices go to the holder only.
+
+The holder changes when it leaves the line (its socket closes or is replaced, the heartbeat drops it, or its subscription no longer includes the Review) and when a listener that names the Review joins ahead of a holder subscribed to all. The new holder then first receives the Review's backlog it has not received: open Remarks its session has not received and pending notices its socket has not received, in store order; live events follow. So a session subscribed to all receives every Review no session names, and takes a Review back with its unanswered Remarks and its unacknowledged notices when the session that named it leaves.
+
+The line holds every listener, so `listeners` in the list and the page's presence count them all; only the holder receives the Review's events. `plannotator annotate` names its Review too: a call on a file another session named first waits behind that session.
+
 ### Client messages (`ListenClientMessage`)
 
-- `SubscribeMessage` `{ "type": "subscribe", "reviews": "all" | ["<review_id>", …] }`: replaces the subscription. Duplicate ids count once; an unknown id is heard once that Review exists; `[]` stops listening and keeps the socket open. The server first replays the backlog of every Review the subscription adds (open Remarks, then pending notices, in store order), then sends a `listener` event for each overlapping session, then confirms with `subscribed`.
+- `SubscribeMessage` `{ "type": "subscribe", "reviews": "all" | ["<review_id>", …] }`: replaces the subscription. Duplicate ids count once; an unknown id is heard once that Review exists; `[]` stops listening and keeps the socket open. The server first replays the backlog of every Review the listener holds after the subscription and did not hold before (open Remarks, then pending notices, in store order), then confirms with `subscribed`. A Review the listener keeps holding is not replayed again, and a Review another listener holds is not replayed to it.
 - `AckMessage` `{ "type": "ack", "id": "nt_…" }`: acknowledges a Finish or Cancel notice so no later subscription replays it. A successful ack sends nothing back; acknowledging an acknowledged notice again changes nothing. As in Lavish, any listener may acknowledge any notice. Remarks are not acknowledged; they stay open until a Reply answers them.
 
 ### Server messages (`ListenServerMessage`)
@@ -249,9 +257,9 @@ Connect a WebSocket to `/api/review/v1/listen?session=<omp session id>` on the l
 - `anchor` (`RemarkAnchor`): `selector` is the annotated block's id (`""` for a global comment), `tag` the annotation kind lowercase (`comment`, `deletion`, `global_comment`), `text` the annotated excerpt. Each is `""` when the page sent none.
 - `feedback` (Plannotator's addition, absent when the page sent no text): the page's whole Send feedback text the Remark came with, upstream's agent-facing markdown, which also holds what is not a Remark (question answers, images, code annotations). Every Remark of one Send feedback carries the same text.
 
-An open Remark reaches each listener session once: it is replayed on a subscription that adds its Review until a Reply answers it, except to a session that already received it, on this socket or an earlier one. The service stores which sessions received each Remark, so a reconnect under the same session id, even after a restart, does not bring it back; a new session id receives every open Remark of its subscription. A listener that must not lose a Remark hands it over before it acts on the next frame.
+An open Remark reaches each listener session once: it goes to its Review's holder, and is replayed to each next holder until a Reply answers it, except to a session that already received it, on this socket or an earlier one. The service stores which sessions received each Remark, so a reconnect under the same session id, even after a restart, does not bring it back. A listener that must not lose a Remark hands it over before it acts on the next frame.
 
-`Notice`, stored and replayed until acknowledged:
+`Notice`, stored and replayed to each next holder until acknowledged:
 
 ```json
 { "type": "finish", "id": "nt_0123456789abcdef01234567", "review_id": "0123456789abcdef", "round": 1, "at": "2026-10-01T10:00:00.000Z", "notes": "Ship it." }
@@ -263,11 +271,6 @@ An open Remark reaches each listener session once: it is replayed on a subscript
 
 `FinishNotice` is the reviewer's Approve or Close; `notes` (Plannotator's addition) carries the Approve's notes, `""` without notes or for Close, and `dismissed: true` (Plannotator's addition, absent on Approve) marks a Close. `CancelNotice` is an agent's Cancel. `round` is the Round the notice closed. A Send feedback's Remarks arrive before a Finish written after them.
 
-Live only, never replayed:
-
-- `PageOpenEvent` `{ "type": "page_open", "review_id": "…", "round": 1, "at": "…" }`: the page was loaded; the list shows the same time as `last_page_open`.
-- `ListenerEvent` `{ "type": "listener", "session": "<other session>", "reviews": "all" | ["…"] }`: another session's subscription overlaps this one; `reviews` is what both hold. A session is never told about itself.
-
 Replies to the client's own messages:
 
 - `SubscribedMessage` `{ "type": "subscribed", "reviews": "all" | ["…"] }`: the normalized subscription, after its replay.
@@ -275,7 +278,7 @@ Replies to the client's own messages:
 
 ### Liveness
 
-The server pings every 30 seconds and drops a listener that did not answer the previous ping. While a listener's subscription includes a Review, its page shows the agent as listening.
+The server pings every 30 seconds and drops a listener that did not answer the previous ping; the Reviews it held go to the next listener in their lines. While a Review's line holds a listener, its page shows the agent as listening.
 
 ## The doors
 

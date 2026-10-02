@@ -1,18 +1,20 @@
 /**
  * The listen socket, `/api/review/v1/listen?session=<omp session id>`: one listener
- * per session, each with the Reviews it subscribed to. A subscription replays the
- * backlog of the Reviews it adds (open Remarks the session has not received and
- * pending Finish or Cancel notices, in store order), then announces the other
- * listeners it overlaps and confirms; later Remarks, notices and page loads go out
- * live. Contract: docs/review-api.md "Listen to Reviews".
+ * per session, each with the Reviews it subscribed to. Each Review has a line of the
+ * listeners whose subscription includes it: those that name it, in the order they
+ * started naming it, then those subscribed to all, in the order they subscribed to
+ * all. The first in line holds the Review and alone receives its Remarks and notices.
+ * Whenever a Review's holder changes, by a subscription or a socket opening or
+ * closing, the new holder first receives the Review's backlog (open Remarks its
+ * session has not received and pending notices this socket has not received, in store
+ * order); a subscription confirms with `subscribed` after its own share of that.
+ * Contract: docs/review-api.md "Listen to Reviews".
  */
 import {
   parseListenClientMessage,
   type ListenServerMessage,
-  type PageOpenEvent,
   type ReviewId,
   type SessionId,
-  type Subscription,
 } from "@plannotator/shared/review-api";
 import type { ServerWebSocket, WebSocketHandler } from "bun";
 import { noticeEvent, remarkEvent, type BacklogRecord, type ReviewRecords, type StoredNotice, type StoredRemark } from "./records.ts";
@@ -20,7 +22,12 @@ import { noticeEvent, remarkEvent, type BacklogRecord, type ReviewRecords, type 
 /** What the service keeps per listen socket. */
 export type ListenData = {
   session: SessionId;
-  subscription: Subscription;
+  /**
+   * The socket's subscription with its place in each line it stands in: per Review it
+   * names, or once for every Review when it subscribed to all. A lower number stands
+   * further ahead.
+   */
+  place: { named: Map<ReviewId, number> } | { all: number };
   /** Record ids sent on this socket, so a replay and a live send never both arrive. */
   sent: Set<string>;
   awaitingPong: boolean;
@@ -40,24 +47,16 @@ export const LISTEN_HEARTBEAT_MS = 30_000;
 
 type Socket = ServerWebSocket<ListenData>;
 
-function includes(subscription: Subscription, reviewId: ReviewId): boolean {
-  return subscription === "all" || subscription.includes(reviewId);
-}
-
-/** The Reviews [a] and [b] both hold, in [a]'s order. */
-function overlap(a: Subscription, b: Subscription): Subscription {
-  if (a === "all") return b === "all" ? "all" : [...b];
-  return a.filter((reviewId) => includes(b, reviewId));
-}
-
 /** A new socket's data for [session], subscribed to nothing yet. */
 export function listenData(session: SessionId): ListenData {
-  return { session, subscription: [], sent: new Set(), awaitingPong: false };
+  return { session, place: { named: new Map() }, sent: new Set(), awaitingPong: false };
 }
 
 export class ReviewListeners {
   private readonly sockets = new Map<SessionId, Socket>();
   private readonly heartbeat: Timer;
+  /** Hands out places in line: each new place stands behind every earlier one. */
+  private places = 0;
 
   constructor(
     private readonly records: ReviewRecords,
@@ -77,16 +76,16 @@ export class ReviewListeners {
     open: (socket) => {
       const { session } = socket.data;
       const previous = this.sockets.get(session);
-      this.sockets.set(session, socket);
+      // The replaced socket leaves its lines now, so nothing more goes to a closing socket.
+      void this.reline(() => this.sockets.set(session, socket)).catch((cause: unknown) => this.failed(session, cause));
       previous?.close(1000, "replaced by a new listener");
       this.log(`listener connected session=${session}`);
     },
     message: (socket, frame) => {
       if (Buffer.byteLength(frame) > LISTEN_MAX_PAYLOAD) return socket.close(1009, "message too big");
       return this.receive(socket, typeof frame === "string" ? frame : frame.toString("utf8")).catch((cause: unknown) => {
-        const error = cause instanceof Error ? cause.message : String(cause);
-        this.log(`listener message failed session=${socket.data.session}: ${error}`);
-        send(socket, { type: "error", error });
+        this.failed(socket.data.session, cause);
+        send(socket, { type: "error", error: cause instanceof Error ? cause.message : String(cause) });
       });
     },
     pong: (socket) => {
@@ -95,35 +94,26 @@ export class ReviewListeners {
     close: (socket) => {
       const { session } = socket.data;
       if (this.sockets.get(session) !== socket) return;
-      this.sockets.delete(session);
+      void this.reline(() => this.sockets.delete(session)).catch((cause: unknown) => this.failed(session, cause));
       this.log(`listener disconnected session=${session}`);
     },
   };
 
-  /** Sessions whose subscription includes [reviewId], each once. */
+  /** The sessions in [reviewId]'s line, its holder first. */
   subscribers(reviewId: ReviewId): SessionId[] {
-    return this.listenersOf(reviewId).map((socket) => socket.data.session);
+    return this.line(reviewId).map((socket) => socket.data.session);
   }
 
-  /** Sends Remarks just stored to every listener of their Review that has not received them. */
+  /** Sends Remarks just stored to their Review's holder. */
   async remarksStored(reviewId: ReviewId, stored: readonly StoredRemark[]): Promise<void> {
-    const backlog = stored.map((remark): BacklogRecord => ({ kind: "remark", remark }));
-    await Promise.all(this.listenersOf(reviewId).map((socket) => this.deliver(socket, reviewId, backlog)));
+    const holder = this.line(reviewId)[0];
+    if (holder) await this.deliver(holder, reviewId, stored.map((remark): BacklogRecord => ({ kind: "remark", remark })));
   }
 
-  /** Sends a notice just stored to every listener of its Review. */
+  /** Sends a notice just stored to its Review's holder. */
   async noticeStored(notice: StoredNotice): Promise<void> {
-    const backlog: BacklogRecord[] = [{ kind: "notice", notice }];
-    await Promise.all(this.listenersOf(notice.review_id).map((socket) => this.deliver(socket, notice.review_id, backlog)));
-  }
-
-  /** Live only: tells the Review's listeners its page was loaded. */
-  pageOpened(event: PageOpenEvent): void {
-    for (const socket of this.listenersOf(event.review_id)) send(socket, event);
-  }
-
-  private listenersOf(reviewId: ReviewId): Socket[] {
-    return [...this.sockets.values()].filter((socket) => includes(socket.data.subscription, reviewId));
+    const holder = this.line(notice.review_id)[0];
+    if (holder) await this.deliver(holder, notice.review_id, [{ kind: "notice", notice }]);
   }
 
   /** Closes every listener and stops the heartbeat. */
@@ -131,6 +121,40 @@ export class ReviewListeners {
     clearInterval(this.heartbeat);
     for (const socket of this.sockets.values()) socket.close(1001, "service stopping");
     this.sockets.clear();
+  }
+
+  /** The current sockets whose subscription includes [reviewId], in line order. */
+  private line(reviewId: ReviewId): Socket[] {
+    const named: [number, Socket][] = [];
+    const all: [number, Socket][] = [];
+    for (const socket of this.sockets.values()) {
+      const { place } = socket.data;
+      if ("all" in place) all.push([place.all, socket]);
+      else if (place.named.has(reviewId)) named.push([place.named.get(reviewId)!, socket]);
+    }
+    const byPlace = (a: [number, Socket], b: [number, Socket]) => a[0] - b[0];
+    return [...named.sort(byPlace), ...all.sort(byPlace)].map(([, socket]) => socket);
+  }
+
+  /**
+   * Applies [change] to the lines, then hands each Review with records whose holder
+   * changed to its new holder: the backlog that holder has not received. Returns how
+   * many records each socket received.
+   */
+  private async reline(change: () => void): Promise<Map<Socket, number>> {
+    const reviewIds = this.records.reviewIds();
+    const before = reviewIds.map((reviewId) => this.line(reviewId)[0]);
+    change();
+    const received = new Map<Socket, number>();
+    await Promise.all(
+      reviewIds.map(async (reviewId, index) => {
+        const holder = this.line(reviewId)[0];
+        if (!holder || holder === before[index]) return;
+        const count = await this.deliver(holder, reviewId, this.records.backlog(reviewId));
+        received.set(holder, (received.get(holder) ?? 0) + count);
+      }),
+    );
+    return received;
   }
 
   private async receive(socket: Socket, frame: string): Promise<void> {
@@ -147,17 +171,24 @@ export class ReviewListeners {
       return;
     }
     if (this.sockets.get(socket.data.session) !== socket) return;
-    const previous = socket.data.subscription;
-    socket.data.subscription = message.reviews;
-    let replayed = 0;
-    for (const reviewId of this.records.reviewIds()) {
-      if (!includes(message.reviews, reviewId) || includes(previous, reviewId)) continue;
-      replayed += await this.deliver(socket, reviewId, this.records.backlog(reviewId));
-    }
-    this.announce(socket);
-    send(socket, { type: "subscribed", reviews: message.reviews });
+    const { reviews } = message;
+    const previous = socket.data.place;
+    const received = await this.reline(() => {
+      socket.data.place =
+        reviews === "all"
+          ? { all: "all" in previous ? previous.all : (this.places += 1) }
+          : {
+              named: new Map(
+                reviews.map((reviewId) => [
+                  reviewId,
+                  ("named" in previous ? previous.named.get(reviewId) : undefined) ?? (this.places += 1),
+                ]),
+              ),
+            };
+    });
+    send(socket, { type: "subscribed", reviews });
     this.log(
-      `listener subscribed session=${socket.data.session} reviews=${message.reviews === "all" ? "all" : message.reviews.length} replayed=${replayed}`,
+      `listener subscribed session=${socket.data.session} reviews=${reviews === "all" ? "all" : reviews.length} replayed=${received.get(socket) ?? 0}`,
     );
   }
 
@@ -174,7 +205,7 @@ export class ReviewListeners {
       if (sent.has(id)) continue;
       if (record.kind === "remark" && (record.remark.status !== "open" || record.remark.delivered_to.includes(session))) continue;
       if (record.kind === "notice" && record.notice.status !== "pending") continue;
-      // A socket that is closing drops the frame; the record then waits for the session's next socket.
+      // A socket that is closing drops the frame; the record then waits for the Review's next holder.
       if (!send(socket, record.kind === "remark" ? remarkEvent(record.remark) : noticeEvent(record.notice))) break;
       sent.add(id);
       if (record.kind === "remark") remarkIds.push(id);
@@ -184,19 +215,8 @@ export class ReviewListeners {
     return count;
   }
 
-  /** Tells [socket] and every listener it overlaps about each other. */
-  private announce(socket: Socket): void {
-    for (const other of this.sockets.values()) {
-      if (other === socket) continue;
-      const shared = overlap(socket.data.subscription, other.data.subscription);
-      if (shared !== "all" && shared.length === 0) continue;
-      send(socket, { type: "listener", session: other.data.session, reviews: shared });
-      send(other, {
-        type: "listener",
-        session: socket.data.session,
-        reviews: overlap(other.data.subscription, socket.data.subscription),
-      });
-    }
+  private failed(session: SessionId, cause: unknown): void {
+    this.log(`listener delivery failed session=${session}: ${cause instanceof Error ? cause.message : String(cause)}`);
   }
 
   private ping(): void {

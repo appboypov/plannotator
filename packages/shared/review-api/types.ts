@@ -165,7 +165,7 @@ export type Review = Round & {
   /** Open Remarks across all Rounds. */
   open_item_count: number;
   last_page_open: IsoTime | null;
-  /** Sessions whose subscription includes this Review, each once. */
+  /** The sessions in this Review's line, each once, the one that holds it first. */
   listeners: SessionId[];
   /** Only in a one-file list (`?file=`): the open Remarks in store order. */
   open_items?: OpenRemark[];
@@ -291,12 +291,6 @@ export type CancelNotice = {
 /** A stored notice that closed a Round; replayed until acknowledged. */
 export type Notice = FinishNotice | CancelNotice;
 
-/** Server, live only: the Review page was loaded. */
-export type PageOpenEvent = { type: "page_open"; review_id: ReviewId; round: number; at: IsoTime };
-
-/** Server, live only: another session listens to Reviews this one also holds. */
-export type ListenerEvent = { type: "listener"; session: SessionId; reviews: Subscription };
-
 /** Server: the subscription is installed, after its replay. */
 export type SubscribedMessage = { type: "subscribed"; reviews: Subscription };
 
@@ -304,10 +298,4 @@ export type SubscribedMessage = { type: "subscribed"; reviews: Subscription };
 export type ListenErrorMessage = { type: "error"; error: string };
 
 /** Every message the listen socket sends. */
-export type ListenServerMessage =
-  | RemarkEvent
-  | Notice
-  | PageOpenEvent
-  | ListenerEvent
-  | SubscribedMessage
-  | ListenErrorMessage;
+export type ListenServerMessage = RemarkEvent | Notice | SubscribedMessage | ListenErrorMessage;
