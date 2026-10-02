@@ -7,7 +7,7 @@
 
 ### Requirement: plannotator annotate goes through the review service
 
-`plannotator annotate <file>` on a local file SHALL open or reopen the file's Review in the running review service on the port in `PLANNOTATOR_SERVICE_PORT`, else 4397, print its link, wait for the Round's end over the listen socket with its own session id, acknowledge the notice it ends on and print the outcome in upstream's shape. Calls on different files SHALL run at once. URLs, folders, raw HTML (a local `.html` file or `--render-html`), `--markdown`, live apps and `--tailscale` SHALL keep upstream's one-shot server.
+`plannotator annotate <file>` on a local file SHALL open or reopen the file's Review in the running review service on the port in `PLANNOTATOR_SERVICE_PORT`, else 4397, print its link, wait for the Round's end over the listen socket with its own session id, acknowledge the notice it ends on and print the outcome in upstream's shape. A call that takes Remarks SHALL answer them with one Reply before it leaves the Review's line, so no listener session is handed them after the call. Calls on different files SHALL run at once. URLs, folders, raw HTML (a local `.html` file or `--render-html`), `--markdown`, live apps and `--tailscale` SHALL keep upstream's one-shot server.
 
 #### Scenario: Approve in the browser
 
@@ -26,7 +26,15 @@
 - **GIVEN** an annotate call waits on its Round
 - **WHEN** the reviewer sends feedback on the page
 - **THEN** the call cancels the Round and prints `annotated` with the page's feedback text
+- **AND** the call answers the Remarks it took with one Reply
 - **AND** the next call on the file opens the next Round on the same link
+
+#### Scenario: A session on all is not handed the Remarks a call took
+
+- **GIVEN** a session subscribed to all and an annotate call on `plan.md`
+- **WHEN** the reviewer sends feedback and the call settles with it
+- **THEN** the session on all receives no `feedback_item` for those Remarks
+- **AND** `open_item_count` no longer counts them
 
 #### Scenario: Feedback, then Approve before the call's Cancel
 
