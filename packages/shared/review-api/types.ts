@@ -250,7 +250,7 @@ export type RoundRefusal = StaleRoundResponse | EndedRoundResponse;
 // Listen socket: `/api/review/v1/listen?session=<omp session id>`
 // ---------------------------------------------------------------------------
 
-/** Client: replace the subscription; the server replays the backlog it adds. */
+/** Client: replace the subscription; the server replays the backlog of each Review it comes to hold. */
 export type SubscribeMessage = { type: "subscribe"; reviews: Subscription };
 
 /** Client: acknowledge a Finish or Cancel notice so it is not replayed again. */

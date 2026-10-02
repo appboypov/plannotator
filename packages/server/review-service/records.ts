@@ -171,7 +171,7 @@ export class ReviewRecords {
   }
 
   /**
-   * What a subscription that adds the Review replays: its open Remarks and pending
+   * What the Review's new holder is handed: its open Remarks and pending
    * notices, merged by when they were stored; a Remark first on a tie, since a Round
    * cannot end before the feedback sent in it.
    */

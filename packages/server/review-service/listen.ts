@@ -84,8 +84,9 @@ export class ReviewListeners {
     message: (socket, frame) => {
       if (Buffer.byteLength(frame) > LISTEN_MAX_PAYLOAD) return socket.close(1009, "message too big");
       return this.receive(socket, typeof frame === "string" ? frame : frame.toString("utf8")).catch((cause: unknown) => {
-        this.failed(socket.data.session, cause);
-        send(socket, { type: "error", error: cause instanceof Error ? cause.message : String(cause) });
+        const error = cause instanceof Error ? cause.message : String(cause);
+        this.log(`listener message failed session=${socket.data.session}: ${error}`);
+        send(socket, { type: "error", error });
       });
     },
     pong: (socket) => {
