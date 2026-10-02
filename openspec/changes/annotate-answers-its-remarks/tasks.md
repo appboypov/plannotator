@@ -26,3 +26,7 @@ Route oneshot: one function in one module (`waitForRound`, about 25 lines) plus 
 ## Plan Change Log
 
 - 2026-10-02: planned and approved in the same run (Brian: "fix it").
+
+## Review Triage Log
+
+- codex review (`gpt-6.1-sol`, reasoning medium, `--base main`): no findings ("no actionable regressions were found"), so no second review ran.
