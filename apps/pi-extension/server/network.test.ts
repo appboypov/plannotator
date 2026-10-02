@@ -170,15 +170,15 @@ describe("pi port selection", () => {
 		process.env.PLANNOTATOR_PORT = `${start}-${start + 1}`;
 		const server = createServer();
 		// http.Server owns a "listening" listener from construction on Node and
-		// Bun 1.4+ (none on Bun 1.3); listenOnPort must leave that count as is.
-		const ownListening = server.listenerCount("listening");
+		// Bun 1.4+ (none on Bun 1.3); listenOnPort must leave those as they are.
+		const ownListening = server.listeners("listening");
 		try {
 			expect(await listenOnPort(server)).toEqual({
 				port: start + 1,
 				portSource: "env",
 			});
 			expect(server.listenerCount("error")).toBe(0);
-			expect(server.listenerCount("listening")).toBe(ownListening);
+			expect(server.listeners("listening")).toEqual(ownListening);
 		} finally {
 			await closeServer(server);
 			await closeServer(servers[0]);
@@ -220,12 +220,12 @@ describe("pi port selection", () => {
 		const { start, servers } = await occupyConsecutivePorts(12);
 		process.env.PLANNOTATOR_PORT = `${start}-${start + servers.length - 1}`;
 		const server = createServer();
-		const ownListening = server.listenerCount("listening");
+		const ownListening = server.listeners("listening");
 
 		try {
 			await expect(listenOnPort(server)).rejects.toThrow("exhausted");
 			expect(server.listenerCount("error")).toBe(0);
-			expect(server.listenerCount("listening")).toBe(ownListening);
+			expect(server.listeners("listening")).toEqual(ownListening);
 		} finally {
 			await Promise.all(servers.map(closeServer));
 		}
@@ -238,14 +238,14 @@ describe("pi non-range port compatibility", () => {
 		const { start, servers } = await occupyConsecutivePorts(1);
 		process.env.PLANNOTATOR_PORT = String(start);
 		const server = createServer();
-		const ownListening = server.listenerCount("listening");
+		const ownListening = server.listeners("listening");
 
 		try {
 			await expect(listenOnPort(server)).rejects.toThrow(
 				new RegExp(`^Port ${start} in use after 5 retries$`),
 			);
 			expect(server.listenerCount("error")).toBe(0);
-			expect(server.listenerCount("listening")).toBe(ownListening);
+			expect(server.listeners("listening")).toEqual(ownListening);
 		} finally {
 			await closeServer(servers[0]);
 		}
