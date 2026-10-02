@@ -363,9 +363,9 @@ describe("One listener holds each Review", () => {
     const review = await openReview("plan.md");
     const chat = await listen("chat");
     await subscribe(chat, "all");
+    const from = chat.messages.length;
     const agent = await listen("agent");
     await subscribe(agent, [review.review_id]);
-    const from = chat.messages.length;
 
     const remark = agent.until("feedback_item");
     await sendFeedback(review.link, [COMMENT]);
