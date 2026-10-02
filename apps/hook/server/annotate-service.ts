@@ -8,11 +8,11 @@
  * Each call listens under its own session id, so two calls on two files run at once.
  * One call is one Round, as one upstream annotate server was one decision:
  * - Approve finishes the Round: `approved`, with the Approve's notes as `feedback`.
- * - Close finishes it with a `dismissed` notice: `dismissed`.
  * - Send feedback stores Remarks and leaves the Round open; the command takes them,
- *   cancels the Round (the page closes, as upstream's page did after feedback) and
- *   prints them as `annotated`. The next call opens the next Round on the same link,
- *   with the document as it is then.
+ *   cancels the Round (the page closes, as upstream's page did after feedback), answers
+ *   them with a Reply so no session is handed them after it, and prints them as
+ *   `annotated`. The next call opens the next Round on the same link, with the document
+ *   as it is then.
  */
 import { randomBytes } from "node:crypto";
 import {
@@ -21,6 +21,7 @@ import {
   REVIEWS_PATH,
   VERSION_PATH,
   cancelPath,
+  repliesPath,
   type ListenServerMessage,
   type Notice,
   type OpenReviewResponse,
@@ -51,6 +52,9 @@ export interface ServiceAnnotateOptions {
 const DEFAULT_RECONNECT = { attempts: 30, delayMs: 1_000 };
 const REQUEST_TIMEOUT_MS = 10_000;
 const BARRIER_TIMEOUT_MS = 2_000;
+
+/** The Reply that answers the Remarks a call took; the page shows it beside each of them. */
+const TAKEN_REPLY = "Received by plannotator annotate.";
 
 /** The error when nothing answers on the service's port. */
 export function serviceNotRunningMessage(origin: string): string {
@@ -199,6 +203,8 @@ function waitForRound(
 
   const remarks = new Map<string, Remark>();
   let cancelling = false;
+  // The call has its result and is answering or leaving; later notices only get acked.
+  let ending = false;
   let settled = false;
   let tries = 0;
   let socket: WebSocket | undefined;
@@ -254,13 +260,33 @@ function waitForRound(
     }
   };
 
+  // A Remark stays open, and is handed to the Review's next listener once this call
+  // leaves, until a Reply answers it; the terminal printed it, so this call answers it.
+  const answer = async (taken: readonly Remark[]) => {
+    try {
+      const response = await fetch(`${origin}${repliesPath(review.review_id)}`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ text: TAKEN_REPLY, answers: taken.map((remark) => remark.id) }),
+        signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+      });
+      if (!response.ok) log(`could not answer the Remarks of ${review.review_id}: HTTP ${response.status}`);
+    } catch (cause) {
+      log(`could not answer the Remarks of ${review.review_id}: ${describe(cause)}`);
+    }
+  };
+
   const take = (ws: WebSocket, notice: Notice) => {
     ws.send(JSON.stringify({ type: "ack", id: notice.id }));
+    if (ending) return;
+    ending = true;
     const sent = [...remarks.values()];
     // As on upstream's page the first decision wins: once feedback arrived, an Approve or
     // Close that ended the Round before this call's Cancel landed does not turn it into one.
-    if (sent.length > 0) settle({ ok: true, outcome: { feedback: feedbackOf(sent) } });
-    else if (notice.type === "cancel") {
+    if (sent.length > 0) {
+      const outcome = { feedback: feedbackOf(sent) };
+      void answer(sent).then(() => settle({ ok: true, outcome }));
+    } else if (notice.type === "cancel") {
       settle({ ok: false, error: `Round ${review.round} of ${review.link} was cancelled by another agent.` });
     } else if (notice.dismissed) settle({ ok: true, outcome: { feedback: "", exit: true } });
     else settle({ ok: true, outcome: { approved: true, feedback: notice.notes } });
@@ -303,7 +329,7 @@ function waitForRound(
     };
     ws.onmessage = (event) => receive(ws, typeof event.data === "string" ? event.data : String(event.data));
     ws.onclose = () => {
-      if (settled || socket !== ws) return;
+      if (settled || ending || socket !== ws) return;
       if (tries >= reconnect.attempts) {
         settle({ ok: false, error: `Lost the review service on ${origin} while waiting for ${review.link}.` });
         return;

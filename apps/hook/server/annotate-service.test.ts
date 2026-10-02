@@ -167,6 +167,42 @@ describe("plannotator annotate through the review service", () => {
     expect(await call.result).toEqual({ ok: true, outcome: { feedback: pageText } });
   });
 
+  test("the Remarks a call took are answered, so a session on all is not handed them after the call", async () => {
+    const running = await start();
+    const reviews = `${running.url}/api/review/v1/reviews`;
+    const chat = new WebSocket(`ws://127.0.0.1:${running.port}/api/review/v1/listen?session=chat`);
+    const frames: string[] = [];
+    let confirmed = Promise.withResolvers<void>();
+    chat.onmessage = (event) => {
+      const type = JSON.parse(String(event.data)).type;
+      frames.push(type);
+      if (type === "subscribed") confirmed.resolve();
+    };
+    chat.onerror = confirmed.reject;
+    chat.onopen = () => chat.send(JSON.stringify({ type: "subscribe", reviews: "all" }));
+    try {
+      await confirmed.promise;
+      const call = annotate(document("plan.md"));
+      const review = await call.opened;
+      // The call holds the Review before the reviewer sends, as when it waits on the page.
+      const listeners = async () => (await (await fetch(reviews)).json()).reviews[0]?.listeners ?? [];
+      while ((await listeners()).length < 2) await Bun.sleep(10);
+
+      expect((await post(`${review.link}api/feedback`, { round: 1, feedback: "Say who owns it.", annotations: [] })).status).toBe(200);
+      expect(await call.result).toEqual({ ok: true, outcome: { feedback: "Say who owns it." } });
+
+      // The call settles once its empty subscription is confirmed, so the hand-over to chat
+      // already went out; chat's own confirmation below follows anything it was handed.
+      confirmed = Promise.withResolvers<void>();
+      chat.send(JSON.stringify({ type: "subscribe", reviews: "all" }));
+      await confirmed.promise;
+      expect(frames).toEqual(["subscribed", "subscribed"]);
+      expect((await (await fetch(reviews)).json()).reviews[0]).toMatchObject({ open_item_count: 0, listeners: ["chat"] });
+    } finally {
+      chat.close();
+    }
+  });
+
   test("feedback sent before an Approve stays the decision, as upstream's first decision wins", async () => {
     await start();
     const call = annotate(document("plan.md"));
@@ -257,7 +293,7 @@ describe("plannotator annotate through the review service", () => {
     // The page's Round ended, so a late Approve on it is refused.
     expect((await post(`${review.link}api/approve`, { round: 1 })).status).toBe(409);
 
-    // The round-1 Remarks stay open, yet the next call waits for its own Round.
+    // The next call waits for its own Round, not for the round-1 Remarks.
     const second = annotate(file);
     const next = await second.opened;
     expect(next).toMatchObject({ review_id: review.review_id, link: review.link, round: 2 });
