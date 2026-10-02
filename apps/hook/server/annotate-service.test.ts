@@ -96,6 +96,59 @@ describe("plannotator annotate through the review service", () => {
     expect(notices.notices.map((notice: { status: string }) => notice.status)).toEqual(["acknowledged"]);
   });
 
+  test("an annotate call waits behind the first named listener and takes its pending Approve after it closes", async () => {
+    const running = await start();
+    const file = document("plan.md");
+    const opened = await post(`${running.url}/api/review/v1/reviews`, { file });
+    expect(opened.status).toBe(200);
+    const initial: unknown = await opened.json();
+    if (!initial || typeof initial !== "object" || !("review_id" in initial) || typeof initial.review_id !== "string") {
+      throw new Error("open did not return a Review id");
+    }
+    const reviewId = initial.review_id;
+    const agent = new WebSocket(`ws://127.0.0.1:${running.port}/api/review/v1/listen?session=first-agent`);
+    const subscribed = Promise.withResolvers<void>();
+    const finish = Promise.withResolvers<unknown>();
+    agent.onmessage = (event) => {
+      const frame: unknown = JSON.parse(String(event.data));
+      if (!frame || typeof frame !== "object" || !("type" in frame)) return;
+      if (frame.type === "subscribed") subscribed.resolve();
+      if (frame.type === "finish") finish.resolve(frame);
+    };
+    agent.onerror = subscribed.reject;
+    agent.onopen = () => agent.send(JSON.stringify({ type: "subscribe", reviews: [reviewId] }));
+    try {
+      await subscribed.promise;
+      const call = annotate(file);
+      const review = await call.opened;
+      expect(review).toMatchObject({ review_id: reviewId, status: "opened", round: 1 });
+
+      // onOpened precedes subscribe. Wait for the list to expose both sessions
+      // before Approve, so this exercises a waiting call rather than a late replay.
+      let listeners: string[] = [];
+      for (let tries = 0; tries < 300; tries += 1) {
+        const listed = await (await fetch(`${running.url}/api/review/v1/reviews`)).json();
+        listeners = listed.reviews[0]?.listeners ?? [];
+        if (listeners.length === 2) break;
+        await Bun.sleep(10);
+      }
+      expect(listeners).toEqual(["first-agent", expect.stringMatching(/^plannotator-annotate-/)]);
+      expect((await post(`${review.link}api/approve`, { feedback: "Ship it.", annotations: [], round: 1 })).status).toBe(200);
+      expect(await finish.promise).toMatchObject({ type: "finish", review_id: reviewId, round: 1, notes: "Ship it." });
+
+      // No completion frame exists for "still waiting"; observe a bounded window
+      // after the first listener has received the notice, before releasing it.
+      expect(await Promise.race([
+        call.result.then(() => "settled"),
+        Bun.sleep(200).then(() => "waiting"),
+      ])).toBe("waiting");
+      agent.close();
+      expect(await call.result).toEqual({ ok: true, outcome: { approved: true, feedback: "Ship it." } });
+    } finally {
+      agent.close();
+    }
+  });
+
   test("Close prints dismissed", async () => {
     await start();
     const call = annotate(document("plan.md"));
