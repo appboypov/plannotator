@@ -1,0 +1,11 @@
+schema: intent-driven
+created: 2026-10-02
+build:
+  status: built
+  type: feature
+  ticket: ''
+  intent: /Users/codaveto/Brainspace/intents/das/review-listen-priority
+  route: oneshot
+  route_source: auto
+  context: []
+  baseline_revision: eaa0a0dff80a5061a77d949243232a5bbe4f918a

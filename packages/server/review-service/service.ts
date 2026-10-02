@@ -415,9 +415,7 @@ export async function startReviewService(options: ReviewServiceOptions): Promise
       const pinned = await pinRound(answer, (store.get(review.review_id) ?? review).round);
       // Read again after the page's HTML arrived: a Cancel or reopen meanwhile must stand.
       const current = store.get(review.review_id) ?? review;
-      const at = new Date().toISOString();
-      await store.save({ ...current, last_page_open: at });
-      listeners.pageOpened({ type: "page_open", review_id: current.review_id, round: current.round, at });
+      await store.save({ ...current, last_page_open: new Date().toISOString() });
       return pinned;
     }
     return answer;

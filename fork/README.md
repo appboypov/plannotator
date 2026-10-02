@@ -69,10 +69,10 @@ Set it when opening (`"visibility": "public"`) or at any time with `POST /api/re
 
 `docs/review-api.md` is the contract: Lavish's review API v1 with the same field names (`adr/0004-review-api-v1-matches-lavish.md`), so a Lavish client works against it. In short, on `127.0.0.1:4397`:
 
-- `GET /api/review/version`: `{ "major": 1, "minor": 0 }`; check the major first.
+- `GET /api/review/version`: `{ "major": 1, "minor": 1 }`; check the major first.
 - `POST /api/review/v1/reviews`: open or reopen a file's Review; `GET` lists Reviews (`?file=` adds its open Remarks).
 - `POST /api/review/v1/reviews/:id/replies`, `/cancel`, `/visibility`: Reply to Remarks, cancel the Round, change the Visibility.
-- `GET /api/review/v1/listen?session=<id>` (WebSocket): subscribe to Reviews; Remarks and Finish or Cancel notices wait on disk until a listener takes them, so a Remark sent while no one listens reaches the next listener.
+- `GET /api/review/v1/listen?session=<id>` (WebSocket): subscribe to Reviews; Remarks and Finish or Cancel notices wait on disk until a listener takes them, so a Remark sent while no one listens reaches the next listener. One listener holds each Review and alone receives its events: the first that names it, else the first subscribed to all; when it leaves, the next takes the Review with what it has not received (`adr/0008-one-listener-holds-each-review.md`).
 - `GET /plannotator/health`: version, API major and the LaunchAgent label.
 
 The types are in `packages/shared/review-api/`. `plannotator annotate <file>` on a local file is a client of this API (`apps/hook/server/annotate-service.ts`, `adr/0007-annotate-is-a-client-of-the-service.md`); with no service it fails and says to start it. URLs, folders, `--markdown`, live apps and `--tailscale` keep upstream's one-shot server.

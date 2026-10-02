@@ -2,8 +2,9 @@
  * Remarks, Rounds and the listen socket against the real service: Send feedback stores
  * one Remark per annotation, a listener that connects later receives them, a session
  * receives each Remark once (across reconnects and restarts), the socket's handshake
- * and frame rules; Approve, Close and Cancel end a Round with a notice, open starts the
- * next one, and a page command for a Round that is not open is refused.
+ * and frame rules; one listener holds each Review and the next in line takes it over
+ * with what it has not received; Approve, Close and Cancel end a Round with a notice,
+ * open starts the next one, and a page command for a Round that is not open is refused.
  */
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
@@ -25,11 +26,12 @@ let service: ReviewService | undefined;
 const sockets: WebSocket[] = [];
 const saved: Record<string, string | undefined> = {};
 
-async function start(): Promise<ReviewService> {
+async function start(options: { heartbeatMs?: number } = {}): Promise<ReviewService> {
   service = await startReviewService({
     port: 0,
     reviewsDir,
     version: "test",
+    heartbeatMs: options.heartbeatMs,
     log: () => {},
     startPage: async (review) => {
       const page = await startAnnotateServer({
@@ -154,6 +156,63 @@ async function list(file?: string): Promise<ListReviewsResponse> {
   return (await (await fetch(`${service!.url}/api/review/v1/reviews${query}`)).json()) as ListReviewsResponse;
 }
 
+/**
+ * The types of the frames [listener] received from index [from] on, read once the
+ * service answered a probe sent after them, so a frame it sent before is counted.
+ */
+async function typesFrom(listener: Listener, from: number): Promise<string[]> {
+  const probe = listener.until("error");
+  listener.socket.send(JSON.stringify({ type: "ack", id: "nt_000000000000000000000000" }));
+  await probe;
+  return listener.messages.slice(from, -1).map((frame) => frame.type);
+}
+
+/**
+ * Waits until the list shows [sessions] as [reviewId]'s line: the line change and its
+ * hand-over happened. A socket's close reaches the service with no signal a client can
+ * await, so this polls the list, the service's only view of the line.
+ */
+async function lineIs(reviewId: string, sessions: string[]): Promise<void> {
+  for (let tries = 0; tries < 300; tries += 1) {
+    const listed = (await list()).reviews.find((review) => review.review_id === reviewId);
+    if (JSON.stringify(listed?.listeners) === JSON.stringify(sessions)) return;
+    await Bun.sleep(10);
+  }
+  throw new Error(`the line of ${reviewId} never became [${sessions.join(", ")}]`);
+}
+
+/**
+ * A listener for [session] subscribed to [reviews] that never answers a ping: a raw
+ * WebSocket client, since Bun's client answers pings on its own. Returns its end.
+ */
+async function silentListener(session: string, reviews: string[]): Promise<() => void> {
+  const { hostname, port } = new URL(service!.url);
+  const upgraded = Promise.withResolvers<void>();
+  const socket = await Bun.connect({
+    hostname,
+    port: Number(port),
+    socket: {
+      data: (_socket, chunk) => {
+        if (chunk.toString("latin1").startsWith("HTTP/1.1 101")) upgraded.resolve();
+      },
+    },
+  });
+  socket.write(
+    `GET /api/review/v1/listen?session=${session} HTTP/1.1\r\nHost: ${hostname}:${port}\r\nUpgrade: websocket\r\n` +
+      "Connection: Upgrade\r\nSec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\nSec-WebSocket-Version: 13\r\n\r\n",
+  );
+  await upgraded.promise;
+  const payload = Buffer.from(JSON.stringify({ type: "subscribe", reviews }));
+  const mask = [1, 2, 3, 4];
+  // One masked text frame; the payload stays under 126 bytes, so its length fits the second byte.
+  socket.write(Buffer.from([0x81, 0x80 | payload.length, ...mask, ...payload.map((byte, index) => byte ^ mask[index % 4])]));
+  return () => socket.end();
+}
+
+async function reply(reviewId: string, answers: string[]): Promise<Response> {
+  return post(`${service!.url}/api/review/v1/reviews/${reviewId}/replies`, { text: "Done.", answers });
+}
+
 beforeEach(() => {
   dir = realpathSync(mkdtempSync(join(tmpdir(), "pn-review-listen-")));
   reviewsDir = join(dir, "reviews");
@@ -204,13 +263,21 @@ describe("Remarks wait for a listener", () => {
     const again = await listen("session-a");
     expect((await subscribe(again, [review.review_id])).map((frame) => frame.type)).toEqual(["subscribed"]);
 
+    // A session subscribed to all stands behind one that names the Review, and takes it
+    // with its open Remarks once that one leaves.
     const other = await listen("session-b");
-    expect((await subscribe(other, "all")).filter((frame) => frame.type === "feedback_item")).toHaveLength(2);
+    expect((await subscribe(other, "all")).map((frame) => frame.type)).toEqual(["subscribed"]);
 
     const listed = await list(join(dir, "plan.md"));
     expect(listed.reviews[0].open_item_count).toBe(2);
     expect(listed.reviews[0].open_items?.map((item) => item.id)).toEqual(stored.map((remark: { id: string }) => remark.id));
-    expect(listed.reviews[0].listeners.sort()).toEqual(["session-a", "session-b"]);
+    expect(listed.reviews[0].listeners).toEqual(["session-a", "session-b"]);
+
+    const from = other.messages.length;
+    const handedOver = other.until("feedback_item");
+    again.socket.close();
+    await handedOver;
+    expect(await typesFrom(other, from)).toEqual(["feedback_item", "feedback_item"]);
   });
 
   test("a Remark sent while a session listens arrives live, and the delivery survives a restart", async () => {
@@ -262,22 +329,6 @@ describe("Remarks wait for a listener", () => {
     expect(items[1]).toMatchObject({ anchor: { tag: "deletion" }, feedback: "# Annotations\n..." });
   });
 
-  test("overlapping listeners hear of each other and of a page load", async () => {
-    await start();
-    const review = await openReview("plan.md");
-    const a = await listen("session-a");
-    await subscribe(a, [review.review_id]);
-    const heard = a.until("listener");
-    const b = await listen("session-b");
-    const bFrames = await subscribe(b, "all");
-    expect(bFrames).toContainEqual({ type: "listener", session: "session-a", reviews: [review.review_id] });
-    expect((await heard).at(-1)).toEqual({ type: "listener", session: "session-b", reviews: [review.review_id] });
-
-    const opened = a.until("page_open");
-    expect((await fetch(review.link)).status).toBe(200);
-    expect((await opened).at(-1)).toMatchObject({ type: "page_open", review_id: review.review_id, round: 1 });
-  });
-
   test("a second socket of a session replaces the first", async () => {
     await start();
     const first = await listen("session-a");
@@ -306,8 +357,240 @@ describe("Remarks wait for a listener", () => {
   });
 });
 
+describe("One listener holds each Review", () => {
+  test("a listener that names the Review comes before one subscribed to all, also for an Approve", async () => {
+    await start();
+    const review = await openReview("plan.md");
+    const chat = await listen("chat");
+    await subscribe(chat, "all");
+    const from = chat.messages.length;
+    const agent = await listen("agent");
+    await subscribe(agent, [review.review_id]);
+
+    const remark = agent.until("feedback_item");
+    await sendFeedback(review.link, [COMMENT]);
+    expect((await remark).at(-1)).toMatchObject({ type: "feedback_item", text: "Say why." });
+    const finish = agent.until("finish");
+    expect((await post(`${review.link}api/approve`, { feedback: "Ship it.", draftGeneration: 2 })).status).toBe(200);
+    expect((await finish).at(-1)).toMatchObject({ type: "finish", notes: "Ship it." });
+    expect(await typesFrom(chat, from)).toEqual([]);
+    expect((await list()).reviews[0].listeners).toEqual(["agent", "chat"]);
+  });
+
+  test("the first listener that names a Review holds it", async () => {
+    await start();
+    const review = await openReview("plan.md");
+    const s1 = await listen("s1");
+    await subscribe(s1, [review.review_id]);
+    const s2 = await listen("s2");
+    await subscribe(s2, [review.review_id]);
+    const from = s2.messages.length;
+
+    const remark = s1.until("feedback_item");
+    await sendFeedback(review.link, [COMMENT]);
+    await remark;
+    expect(await typesFrom(s2, from)).toEqual([]);
+  });
+
+  test("a listener subscribed to all hears the Reviews nobody names", async () => {
+    await start();
+    const a = await openReview("a.md");
+    const chat = await listen("chat");
+    await subscribe(chat, "all");
+    const agent = await listen("agent");
+    await subscribe(agent, [a.review_id]);
+
+    const b = await openReview("b.md");
+    const remark = chat.until("feedback_item");
+    await sendFeedback(b.link, [COMMENT]);
+    expect((await remark).at(-1)).toMatchObject({ type: "feedback_item", review_id: b.review_id });
+  });
+
+  test("keeping a Review in a new subscription keeps the place; a replacing socket joins the back", async () => {
+    await start();
+    const a = await openReview("a.md");
+    const b = await openReview("b.md");
+    const s1 = await listen("s1");
+    await subscribe(s1, [a.review_id]);
+    const s2 = await listen("s2");
+    await subscribe(s2, [a.review_id]);
+    await subscribe(s1, [a.review_id, b.review_id]);
+    let from = s2.messages.length;
+
+    const toS1 = s1.until("feedback_item");
+    await sendFeedback(a.link, [COMMENT]);
+    await toS1;
+    expect(await typesFrom(s2, from)).toEqual([]);
+    expect((await list()).reviews.find((review) => review.review_id === a.review_id)?.listeners).toEqual(["s1", "s2"]);
+
+    // The Remark s1 received and nobody answered goes with the Review to s2.
+    const handedOver = s2.until("feedback_item");
+    const replacing = await listen("s1");
+    await handedOver;
+    await subscribe(replacing, [a.review_id]);
+    from = s2.messages.length;
+    const toS2 = s2.until("feedback_item");
+    await sendFeedback(a.link, [DELETION]);
+    expect((await toS2).at(-1)).toMatchObject({ anchor: { tag: "deletion" } });
+    expect(await typesFrom(s2, from)).toEqual(["feedback_item"]);
+    expect(await typesFrom(replacing, replacing.messages.length)).toEqual([]);
+    expect((await list()).reviews.find((review) => review.review_id === a.review_id)?.listeners).toEqual(["s2", "s1"]);
+  });
+
+  test("an unanswered Remark falls back to the listener subscribed to all when the holder's socket closes", async () => {
+    await start();
+    const review = await openReview("plan.md");
+    const chat = await listen("chat");
+    await subscribe(chat, "all");
+    const agent = await listen("agent");
+    await subscribe(agent, [review.review_id]);
+    const received = agent.until("feedback_item");
+    await sendFeedback(review.link, [COMMENT]);
+    await received;
+    const from = chat.messages.length;
+
+    agent.socket.close();
+    await lineIs(review.review_id, ["chat"]);
+    await sendFeedback(review.link, [DELETION]);
+    const frames = await typesFrom(chat, from);
+    expect(frames).toEqual(["feedback_item", "feedback_item"]);
+    expect(chat.messages.slice(from, from + 2)).toMatchObject([{ text: "Say why." }, { anchor: { tag: "deletion" } }]);
+  });
+
+  test("a pending Close falls back with the Review when the holder's subscription drops it", async () => {
+    await start();
+    const review = await openReview("plan.md");
+    const chat = await listen("chat");
+    await subscribe(chat, "all");
+    const agent = await listen("agent");
+    await subscribe(agent, [review.review_id]);
+    const closed = agent.until("finish");
+    expect((await post(`${review.link}api/exit`)).status).toBe(200);
+    expect((await closed).at(-1)).toMatchObject({ type: "finish", dismissed: true });
+    const from = chat.messages.length;
+
+    const handedOver = chat.until("finish");
+    await subscribe(agent, []);
+    expect((await handedOver).at(-1)).toMatchObject({ type: "finish", review_id: review.review_id, dismissed: true });
+    expect(await typesFrom(chat, from)).toEqual(["finish"]);
+  });
+
+  test("a Remark answered before the hand-over is not handed over", async () => {
+    await start();
+    const review = await openReview("plan.md");
+    const chat = await listen("chat");
+    await subscribe(chat, "all");
+    const agent = await listen("agent");
+    await subscribe(agent, [review.review_id]);
+    const received = agent.until("feedback_item");
+    await sendFeedback(review.link, [COMMENT]);
+    const remark = (await received).at(-1);
+    expect((await reply(review.review_id, [remark && "id" in remark ? remark.id : ""])).status).toBe(200);
+    const from = chat.messages.length;
+
+    agent.socket.close();
+    await lineIs(review.review_id, ["chat"]);
+    expect(await typesFrom(chat, from)).toEqual([]);
+  });
+
+  test("a listener that names the Review takes it over from the listener subscribed to all", async () => {
+    await start();
+    const review = await openReview("plan.md");
+    const chat = await listen("chat");
+    await subscribe(chat, "all");
+    const received = chat.until("feedback_item");
+    await sendFeedback(review.link, [COMMENT]);
+    await received;
+
+    const agent = await listen("agent");
+    expect((await subscribe(agent, [review.review_id])).map((frame) => frame.type)).toEqual(["feedback_item", "subscribed"]);
+    const from = chat.messages.length;
+    const later = agent.until("feedback_item");
+    await sendFeedback(review.link, [DELETION]);
+    await later;
+    expect(await typesFrom(chat, from)).toEqual([]);
+  });
+
+  test("a holder dropped after a missed ping hands the Review over", async () => {
+    await start({ heartbeatMs: 50 });
+    const review = await openReview("plan.md");
+    const end = await silentListener("agent", [review.review_id]);
+    await lineIs(review.review_id, ["agent"]);
+    const chat = await listen("chat");
+    await subscribe(chat, "all");
+    await lineIs(review.review_id, ["chat"]);
+
+    const remark = chat.until("feedback_item");
+    await sendFeedback(review.link, [COMMENT]);
+    expect((await remark).at(-1)).toMatchObject({ type: "feedback_item", review_id: review.review_id });
+    end();
+  });
+});
+
+describe("A subscription replays only the Reviews its listener holds", () => {
+  test("adding a Review on an open socket replays that Review only", async () => {
+    await start();
+    const a = await openReview("a.md");
+    const b = await openReview("b.md");
+    const listener = await listen("agent");
+    await subscribe(listener, [a.review_id]);
+    const received = listener.until("feedback_item");
+    await sendFeedback(a.link, [COMMENT]);
+    await received;
+    await sendFeedback(b.link, [DELETION]);
+
+    const replay = await subscribe(listener, [a.review_id, b.review_id]);
+    expect(replay.map((frame) => frame.type)).toEqual(["feedback_item", "subscribed"]);
+    expect(replay[0]).toMatchObject({ review_id: b.review_id });
+  });
+
+  test("subscribing to all skips a Review another listener names", async () => {
+    await start();
+    const a = await openReview("a.md");
+    const b = await openReview("b.md");
+    const agent = await listen("agent");
+    await subscribe(agent, [a.review_id]);
+    await sendFeedback(a.link, [COMMENT]);
+    await sendFeedback(b.link, [DELETION]);
+
+    const chat = await listen("chat");
+    const replay = await subscribe(chat, "all");
+    expect(replay.map((frame) => frame.type)).toEqual(["feedback_item", "subscribed"]);
+    expect(replay[0]).toMatchObject({ review_id: b.review_id });
+  });
+
+  test("a listener behind the holder gets no replay and nobody hears about it", async () => {
+    await start();
+    const review = await openReview("plan.md");
+    const s1 = await listen("s1");
+    await subscribe(s1, [review.review_id]);
+    const finish = s1.until("finish");
+    await post(`${review.link}api/approve`, { feedback: "", draftGeneration: 1 });
+    await finish;
+    const from = s1.messages.length;
+
+    const s2 = await listen("s2");
+    expect((await subscribe(s2, [review.review_id])).map((frame) => frame.type)).toEqual(["subscribed"]);
+    const all = await listen("s3");
+    expect((await subscribe(all, "all")).map((frame) => frame.type)).toEqual(["subscribed"]);
+    expect(await typesFrom(s1, from)).toEqual([]);
+  });
+
+  test("a page load sends no frame and shows as last_page_open", async () => {
+    await start();
+    const review = await openReview("plan.md");
+    const listener = await listen("agent");
+    await subscribe(listener, [review.review_id]);
+    const from = listener.messages.length;
+
+    expect((await fetch(review.link)).status).toBe(200);
+    expect(await typesFrom(listener, from)).toEqual([]);
+    expect((await list()).reviews[0].last_page_open).not.toBeNull();
+  });
+});
+
 describe("Rounds, Approve, Cancel and list", () => {
-  test("Approve with notes finishes the Round; listeners get the Finish until it is acknowledged", async () => {
+  test("Approve with notes finishes the Round; each next holder gets the Finish until it is acknowledged", async () => {
     await start();
     const review = await openReview("plan.md");
     const live = await listen("session-a");
@@ -326,15 +609,23 @@ describe("Rounds, Approve, Cancel and list", () => {
     expect((await list()).reviews[0]).toMatchObject({ state: "finished", round: 1 });
 
     const later = await listen("session-b");
-    const replay = await subscribe(later, "all");
-    expect(replay.map((frame) => frame.type)).toEqual(["feedback_item", "finish", "listener", "subscribed"]);
+    expect((await subscribe(later, "all")).map((frame) => frame.type)).toEqual(["subscribed"]);
+    const handedOver = later.until("finish");
+    live.socket.close();
+    const replay = await handedOver;
+    expect(replay.map((frame) => frame.type)).toEqual(["feedback_item", "finish"]);
     const noticeId = replay[1].type === "finish" ? replay[1].id : "";
     expect(noticeId).toMatch(/^nt_[0-9a-f]{24}$/);
 
     later.socket.send(JSON.stringify({ type: "ack", id: noticeId }));
     later.socket.send(JSON.stringify({ type: "ack", id: noticeId }));
     const third = await listen("session-c");
-    expect((await subscribe(third, "all")).map((frame) => frame.type)).toEqual(["feedback_item", "listener", "listener", "subscribed"]);
+    expect((await subscribe(third, "all")).map((frame) => frame.type)).toEqual(["subscribed"]);
+    const from = third.messages.length;
+    const remark = third.until("feedback_item");
+    later.socket.close();
+    await remark;
+    expect(await typesFrom(third, from)).toEqual(["feedback_item"]);
     expect(later.messages.filter((frame) => frame.type === "error")).toEqual([]);
   });
 
