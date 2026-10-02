@@ -6,12 +6,12 @@ The fork's review API v1: version discovery, the Review routes, the listen socke
 ## Requirements
 
 ### Requirement: Unversioned version discovery
-The service SHALL answer `GET /api/review/version` with HTTP 200 and JSON `{ "major": <int>, "minor": <int> }`, at a path without a version, so a client can read any major and refuse one it does not support. This build SHALL answer major 1, minor 0.
+The service SHALL answer `GET /api/review/version` with HTTP 200 and JSON `{ "major": <int>, "minor": <int> }`, at a path without a version, so a client can read any major and refuse one it does not support. This build SHALL answer major 1, minor 1, the minor raised since one listener holds each Review.
 
 #### Scenario: A client reads the major
 - **GIVEN** the review service runs on 127.0.0.1
 - **WHEN** a client sends `GET /api/review/version`
-- **THEN** the answer is HTTP 200 with `{ "major": 1, "minor": 0 }`
+- **THEN** the answer is HTTP 200 with `{ "major": 1, "minor": 1 }`
 
 #### Scenario: A Lavish plugin client accepts the service
 - **GIVEN** the service runs and the `omp-lavish-review` `ReviewApi` client points at it
@@ -55,7 +55,7 @@ A Review's Visibility SHALL be `local`, `public` or `temporary`. Its link SHALL 
 - **THEN** the answer is HTTP 400 and no Review is created
 
 ### Requirement: Listen socket messages
-The listen socket at `/api/review/v1/listen?session=<id>` SHALL take `subscribe` and `ack` messages and send `feedback_item`, `finish`, `cancel`, `page_open`, `listener`, `subscribed` and `error` messages with Lavish's shapes. A handshake without a session SHALL be refused with HTTP 400.
+The listen socket at `/api/review/v1/listen?session=<id>` SHALL take `subscribe` and `ack` messages and send `feedback_item`, `finish`, `cancel`, `subscribed` and `error` messages with Lavish's shapes. It SHALL send no `listener` message about other sessions and no `page_open` message when a Review page is loaded. A handshake without a session SHALL be refused with HTTP 400.
 
 #### Scenario: Subscribing is confirmed with the normalized subscription
 - **GIVEN** a listener connected with a session id
@@ -71,6 +71,16 @@ The listen socket at `/api/review/v1/listen?session=<id>` SHALL take `subscribe`
 - **GIVEN** a listener connected as session `s1`
 - **WHEN** another socket connects as session `s1`
 - **THEN** the first socket closes with code 1000
+
+#### Scenario: Another listener on the same Review is not announced
+- **GIVEN** a listener `s1` subscribed to all Reviews
+- **WHEN** a listener `s2` subscribes to Review A
+- **THEN** `s2` receives only `subscribed` and `s1` receives no frame
+
+#### Scenario: A page load sends no frame
+- **GIVEN** a listener subscribed to Review A
+- **WHEN** Review A's page is loaded
+- **THEN** the listener receives no frame and the list shows the time of the load as Review A's `last_page_open`
 
 ### Requirement: Only this Mac reaches the review API
 The local service SHALL answer only requests whose Host is `127.0.0.1` or `localhost` on its port, and SHALL refuse a `POST` or listen handshake carrying a foreign `Origin` or `Referer`, with HTTP 403 `{ "error": "forbidden" }`. A header-less local client SHALL pass.
