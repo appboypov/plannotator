@@ -1,9 +1,4 @@
-# annotate-command Specification
-
-## Purpose
-`plannotator annotate` on a local Markdown or text file is a client of the review service; other targets keep upstream's one-shot server.
-
-## Requirements
+## MODIFIED Requirements
 
 ### Requirement: plannotator annotate goes through the review service
 

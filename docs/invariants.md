@@ -36,7 +36,7 @@ Ports 4397, 4398 and 4399 are the live values; `PLANNOTATOR_SERVICE_PORT`, `PLAN
 
 - **The service decides, not the page server.** Send feedback, Approve and Close (`api/feedback`, `api/approve`, `api/exit`) are answered by the service (ADR 0006); the upstream page server only gets the draft cleared first. A command for a Round that is not the open one writes nothing and answers 409, so a stale tab can never end the next Round.
 - **The page server is upstream's.** One upstream annotate server per Review (ADR 0005), started on the first page request and kept while the service runs, so upstream's per-server state stays per Review. The page reaches its API through its own path (`page-base.ts`), and learns its Round from the Round stream and the `plannotator-review-round` meta tag (`page-round.ts`).
-- **`plannotator annotate` is only a client.** On a local file it opens the Review with `reopen: true` and waits on the listen socket under its own session id (ADR 0007, `annotate-service.ts`); with no service it fails instead of falling back, so a stopped service is never hidden.
+- **`plannotator annotate` is only a client.** On a local file it opens the Review with `reopen: true` and waits on the listen socket under its own session id (ADR 0007, `annotate-service.ts`); with no service it fails instead of falling back, so a stopped service is never hidden. It answers the Remarks it took with a Reply before it leaves the Review's line, so the next holder is not handed what the terminal already printed.
 
 ## Install and update
 
