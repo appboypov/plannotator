@@ -1069,6 +1069,10 @@ describe("review-core", () => {
     // Partial clones (and pruned object databases) can report `missing` for an
     // index blob git can still diff perfectly well from the working tree.
     const repoDir = initRepo();
+    // git reads the index blob instead of the working tree whenever a
+    // checkout conversion applies, so a global core.autocrlf would make
+    // this blob unreadable. Pin the repo to no conversion.
+    git(repoDir, ["config", "core.autocrlf", "false"]);
     writeFileSync(join(repoDir, "added.txt"), "content from the index\n", "utf-8");
     git(repoDir, ["add", "added.txt"]);
     const blobId = git(repoDir, ["rev-parse", ":added.txt"]);
