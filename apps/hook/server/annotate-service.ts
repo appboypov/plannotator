@@ -8,6 +8,7 @@
  * Each call listens under its own session id, so two calls on two files run at once.
  * One call is one Round, as one upstream annotate server was one decision:
  * - Approve finishes the Round: `approved`, with the Approve's notes as `feedback`.
+ * - Close finishes it with a `dismissed` notice: `dismissed`.
  * - Send feedback stores Remarks and leaves the Round open; the command takes them,
  *   cancels the Round (the page closes, as upstream's page did after feedback), answers
  *   them with a Reply so no session is handed them after it, and prints them as
@@ -252,7 +253,7 @@ function waitForRound(
         method: "POST",
         signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
       });
-      if (!answer.ok) settle({ ok: false, error: `The review service did not end the Round: HTTP ${answer.status}` });
+      if (!answer.ok && !ending) settle({ ok: false, error: `The review service did not end the Round: HTTP ${answer.status}` });
     } catch (cause) {
       // The service went away; the socket reconnects and tries again.
       cancelling = false;

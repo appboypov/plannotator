@@ -185,8 +185,13 @@ describe("plannotator annotate through the review service", () => {
       const call = annotate(document("plan.md"));
       const review = await call.opened;
       // The call holds the Review before the reviewer sends, as when it waits on the page.
-      const listeners = async () => (await (await fetch(reviews)).json()).reviews[0]?.listeners ?? [];
-      while ((await listeners()).length < 2) await Bun.sleep(10);
+      // The service has no event for "listening"; poll its list, bounded as above.
+      let listeners: string[] = [];
+      for (let tries = 0; tries < 300 && listeners.length < 2; tries += 1) {
+        if (tries > 0) await Bun.sleep(10);
+        listeners = (await (await fetch(reviews)).json()).reviews[0]?.listeners ?? [];
+      }
+      expect(listeners).toHaveLength(2);
 
       expect((await post(`${review.link}api/feedback`, { round: 1, feedback: "Say who owns it.", annotations: [] })).status).toBe(200);
       expect(await call.result).toEqual({ ok: true, outcome: { feedback: "Say who owns it." } });
@@ -204,13 +209,15 @@ describe("plannotator annotate through the review service", () => {
   });
 
   test("feedback sent before an Approve stays the decision, as upstream's first decision wins", async () => {
-    await start();
+    const running = await start();
     const call = annotate(document("plan.md"));
     const review = await call.opened;
     expect((await post(`${review.link}api/feedback`, { round: 1, feedback: "Rework it.", annotations: [] })).status).toBe(200);
     // Lands before or after the call's own Cancel; the call reports the feedback either way.
     await post(`${review.link}api/approve`, { round: 1, feedback: "Ship it." });
     expect(await call.result).toEqual({ ok: true, outcome: { feedback: "Rework it." } });
+    // Whichever notice ended the Round, the Reply answered what the call took.
+    expect((await (await fetch(`${running.url}/api/review/v1/reviews`)).json()).reviews[0].open_item_count).toBe(0);
   });
 
   test("a Remark delivered to the call's session while its socket was gone still reaches it after the reconnect", async () => {

@@ -1,7 +1,7 @@
 /// <reference types="bun-types" />
 /** Guards feedback being handed to chat again after the real annotate CLI exits. */
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import {
   HEALTH_PATH,
@@ -16,6 +16,8 @@ import { closeServer, occupyConsecutivePorts } from "../helpers/ports";
 
 const ROOT = resolve(import.meta.dir, "../..");
 const CLI = join(ROOT, "apps/hook/server/index.ts");
+// The CLI imports its built pages (apps/hook/dist); upstream's `bun test` step runs without a build.
+const BUILT = ["index.html", "review.html"].every((page) => existsSync(join(ROOT, "apps/hook/dist", page)));
 const TIMEOUT_MS = 20_000;
 const FEEDBACK = "# File Feedback\n\nName the owner and deadline.\n";
 let dir: string;
@@ -181,7 +183,7 @@ async function settled(child: ReturnType<typeof spawn>, review: Review) {
   return await json<ReviewRepliesResponse>(`${review.link}api/review-replies`);
 }
 
-describe("plannotator annotate goes through the review service", () => {
+describe.skipIf(!BUILT)("plannotator annotate goes through the review service", () => {
   test("Send feedback", async () => {
     const { child, review } = await annotate();
     expect(review.round).toBe(1);
