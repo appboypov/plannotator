@@ -37,7 +37,7 @@ The service SHALL post the Approve and the Close of a linked Review as one top-l
 - **THEN** its issue gets no comment
 
 ### Requirement: Delivery to Multica is durable
-Each posted record of a linked Review SHALL carry a delivery state in the Review's folder: the issue and workspace it goes to, pending or posted, and once posted the comment id and time. A Review's records SHALL post one at a time in store order. A failed post SHALL stay pending and retry with a growing wait of at most five minutes, holding only its own Review's later records. A started service SHALL post every pending record. A posted record SHALL not be posted again. An open with `issue` SHALL move the Review's pending records to that issue, and SHALL enroll the Review's open Remarks and pending Approve or Close stored before the link; answered Remarks, acknowledged notices and Cancels SHALL stay off it.
+Each posted record of a linked Review SHALL carry a delivery state in the Review's folder: the issue and workspace it goes to, pending or posted, and once posted the time and the comment id when the answer has one. Any 2xx answer SHALL count as posted. A Review's records SHALL post one at a time in store order. A failed post SHALL stay pending and retry with a growing wait of at most five minutes, holding only its own Review's later records. A started service SHALL post every pending record. A posted record SHALL not be posted again. An open with `issue` SHALL move the Review's pending records to that issue, and SHALL enroll the Review's open Remarks that no listener received and the pending Approve or Close of the Round the Review is in after the open; received or answered Remarks, an earlier Round's Approve or Close, acknowledged notices and Cancels SHALL stay off it.
 
 #### Scenario: A failed post retries
 - **GIVEN** a linked Review and a Multica server that refuses the first post
@@ -58,6 +58,11 @@ Each posted record of a linked Review SHALL carry a delivery state in the Review
 - **GIVEN** a Review opened without `issue` and an open Remark the reviewer sent on it
 - **WHEN** a client opens the file again with issue `WORK-1`
 - **THEN** `WORK-1` gets a comment holding that Remark, and a Remark already answered before the link gets none
+
+#### Scenario: A Remark a listener received stays with that listener
+- **GIVEN** a Review opened without `issue` and an open Remark a listener received
+- **WHEN** a client opens the file again with issue `WORK-1`
+- **THEN** `WORK-1` gets no comment for that Remark
 
 #### Scenario: The log holds no remark text
 - **GIVEN** a linked Review
