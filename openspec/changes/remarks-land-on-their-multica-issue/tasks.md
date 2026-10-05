@@ -1,6 +1,6 @@
 ## 1. The link
 
-- [ ] 1.1 `packages/shared/review-api/`: `MulticaIssue` type; optional `issue` on the open request, `issue` (object or null) on the open answer and on `Review`; `parseOpenReviewRequest` takes `issue` (both strings trimmed and nonblank, else 400 `issue requires nonempty id and workspace_id strings`); `API_VERSION` minor 3. Verify: `packages/shared/review-api/parse.test.ts` cases for a valid, an incomplete and a blank `issue`.
+- [x] 1.1 `packages/shared/review-api/`: `MulticaIssue` type; optional `issue` on the open request, `issue` (object or null) on the open answer and on `Review`; `parseOpenReviewRequest` takes `issue` (both strings trimmed and nonblank, else 400 `issue requires nonempty id and workspace_id strings`); `API_VERSION` minor 3. Verify: `packages/shared/review-api/parse.test.ts` cases for a valid, an incomplete and a blank `issue`.
 - [ ] 1.2 `packages/server/review-service/settings.ts`: `PLANNOTATOR_MULTICA_PROFILE` read into the service settings (unset or blank = none). `store.ts`: `StoredReview.issue` (a `review.json` without it reads as null). `service.ts` open: refuses `issue` without the setting with 400 `PLANNOTATOR_MULTICA_PROFILE is required to link an issue` before any change, keeps the stored issue without `issue`, replaces it with one, returns `issue` in the answer; the list rows carry `issue`. Verify: `service.test.ts` scenarios of the `review-api` delta (link, keep, replace, null, refused without the setting, incomplete refused, version 1.3).
 
 ## 2. Delivery state and poster
@@ -19,3 +19,7 @@
 - [ ] 4.1 `apps/hook/server/launch-agent.ts`: the plan sets `PLANNOTATOR_MULTICA_PROFILE=skuddy` and carries the installing shell's value. Verify: the launch-agent plan test reads the whole environment: the profile name and no token.
 - [ ] 4.2 `docs/review-api.md` (minor 3, the open's `issue`, its refusals, the list's `issue`, "Comments on the Multica issue", linked Reviews and listeners), `docs/invariants.md` (delivery state, poster order and retry, listen exclusion), `fork/README.md` (the setting). Verify: read through against the specs.
 - [ ] 4.3 The fork check passes (`bun fork/ci-check.ts`, through Crabbox or locally) and `openspec validate remarks-land-on-their-multica-issue --type change --strict` passes.
+
+## Implementation Notes
+
+- 1.1: Added the additive issue contract and API 1.3 in `packages/shared/review-api/{types,parse,version}.ts`. `parse.test.ts` proves trimming and invalid links (16 tests pass). Baseline: `ecba51d88cc09981d835a12af7a07d4c686964d4`.

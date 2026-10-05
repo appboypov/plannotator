@@ -1,13 +1,14 @@
 schema: intent-driven
 created: 2026-10-05
 build:
-  status: "ready-for-dev"
+  status: "in-progress"
   type: "feature"
   ticket: "WORK-167"
   intent: "/Users/codaveto/Repos/Ventures/madspec/intents/persona-agents-in-multica"
   route: "full"
   route_source: "auto"
   assignee: "Pieter"
+  baseline_revision: "ecba51d88cc09981d835a12af7a07d4c686964d4"
   context:
     - "/Users/codaveto/Repos/Ventures/madspec/intents/persona-agents-in-multica/persona-agents-in-multica.md"
     - "/Users/codaveto/Worktrees/omp-lavish-review/remarks-land-on-their-multica-issue/adr/0010-review-remarks-post-to-their-multica-issue.md"
