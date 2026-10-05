@@ -33,7 +33,7 @@ const startPage: StartReviewPage = async (review) => {
 };
 
 async function start(multicaProfile: string | null = null): Promise<ReviewService> {
-  service = await startReviewService({ port: 0, reviewsDir, version: "test", startPage, log: () => {}, multicaProfile });
+  service = await startReviewService({ port: 0, reviewsDir, version: "test", startPage, log: () => {}, multicaProfile, multicaHome: dir });
   return service;
 }
 
@@ -98,6 +98,38 @@ describe("review service", () => {
 
     const again = (await (await open(plan)).json()) as OpenReviewResponse;
     expect(again).toEqual(first);
+  });
+
+  test("page Send feedback and Approve post three ordered comments; Cancel posts none", async () => {
+    const comments: string[] = [];
+    const received = Promise.withResolvers<void>();
+    const fake = Bun.serve({ hostname: "127.0.0.1", port: 0, fetch: async (request) => {
+      expect(request.headers.get("X-Workspace-ID")).toBe("W");
+      comments.push((await request.json()).content);
+      if (comments.length === 3) received.resolve();
+      return Response.json({ id: `comment-${comments.length}` }, { status: 201 });
+    } });
+    try {
+      const profileDir = join(dir, ".multica", "profiles", "scratch");
+      mkdirSync(profileDir, { recursive: true });
+      writeFileSync(join(profileDir, "config.json"), JSON.stringify({ server_url: fake.url.origin, token: "fake-token" }));
+      await start("scratch");
+      const issue = { id: "WORK-1", workspace_id: "W" };
+      const { link } = await (await open(document("plan.md", "# Plan\n"), { issue })).json();
+      expect((await fetch(`${link}api/feedback`, { method: "POST", body: JSON.stringify({
+        round: 1, annotations: [{ type: "comment", blockId: "block-1", originalText: "Plan", text: "one" },
+          { type: "comment", blockId: "block-2", originalText: "Ship", text: "two" }],
+      }) })).status).toBe(200);
+      expect((await fetch(`${link}api/approve`, { method: "POST", body: JSON.stringify({ round: 1, feedback: "ship" }) })).status).toBe(200);
+      await received.promise;
+      expect(comments.map((content) => content.match(/> (one|two|ship)/)?.[1])).toEqual(["one", "two", "ship"]);
+      const cancelled = await (await open(document("cancel.md", "# Cancel\n"), { issue })).json();
+      await fetch(`${service!.url}/api/review/v1/reviews/${cancelled.review_id}/cancel`, { method: "POST" });
+      await service!.stop();
+      expect(comments).toHaveLength(3);
+      const notices = JSON.parse(readFileSync(join(reviewsDir, cancelled.review_id, "notices.json"), "utf8")).notices;
+      expect(notices[0]).not.toHaveProperty("multica");
+    } finally { fake.stop(true); }
   });
 
   test("links, keeps, replaces and reloads an issue while old reviews remain unlinked", async () => {

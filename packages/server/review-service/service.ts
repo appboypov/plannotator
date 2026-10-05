@@ -54,6 +54,7 @@ import { ReviewPages, type StartReviewPage } from "./pages.ts";
 import { ReviewRecords, openRemark, recordId, remarksFromFeedback, type StoredNotice } from "./records.ts";
 import { ReviewStore, reviewIdForFile, type StoredReview } from "./store.ts";
 import { TEMPORARY_DOOR_HOST } from "./settings.ts";
+import { MulticaPoster } from "./multica-poster.ts";
 
 export type ReviewServiceOptions = {
   /** Port on [hostname]; `0` picks a free one (read it from `url`). */
@@ -80,6 +81,8 @@ export type ReviewServiceOptions = {
   doorRateLimit?: number;
   /** CLI profile for member comments on linked Reviews; absent disables linking. */
   multicaProfile?: string | null;
+  /** Profile root override for isolated tests; production uses the service's HOME. */
+  multicaHome?: string;
 };
 
 export type ReviewService = {
@@ -115,6 +118,7 @@ export async function startReviewService(options: ReviewServiceOptions): Promise
     store.all().map((review) => review.review_id),
     (reviewId) => store.folder(reviewId),
     log,
+    (reviewId) => store.get(reviewId)?.issue ?? null,
   );
   const listeners = new ReviewListeners(records, log, options.heartbeatMs);
   const pages = new ReviewPages(options.startPage);
@@ -208,8 +212,10 @@ export async function startReviewService(options: ReviewServiceOptions): Promise
     if (existing && issue) {
       existing = { ...existing, issue };
       await store.save(existing);
+      await records.relink(reviewId, issue);
+      poster.wake(reviewId, true);
     }
-    // The reviewer's Approve stands until the agent asks to reopen it; nothing is written.
+    // Approve stands until reopening is requested; linking may still update its destination.
     if (existing?.state === "finished" && !reopen) {
       return Response.json({
         review_id: reviewId,
@@ -239,6 +245,10 @@ export async function startReviewService(options: ReviewServiceOptions): Promise
           last_page_open: null,
         };
     if (!existing || nextRound || review.visibility !== existing.visibility) await store.save(review);
+    if (!existing && issue) {
+      await records.relink(reviewId, issue);
+      poster.wake(reviewId, true);
+    }
     if (!existing) log(`opened Review ${reviewId} for ${file}`);
     if (nextRound) {
       log(`opened round ${review.round} of Review ${reviewId}`);
@@ -372,6 +382,7 @@ export async function startReviewService(options: ReviewServiceOptions): Promise
       const added = remarksFromFeedback(body, current, new Date().toISOString());
       if (added.length > 0) {
         await records.addRemarks(current.review_id, added);
+        poster.wake(current.review_id);
         log(`stored ${added.length} Remark(s) for Review ${current.review_id} round ${current.round}`);
         await listeners.remarksStored(current.review_id, added);
       }
@@ -404,6 +415,7 @@ export async function startReviewService(options: ReviewServiceOptions): Promise
         : { type: "cancel", ...fields };
     const ended: StoredReview = { ...review, state: end.type === "finish" ? "finished" : "cancelled" };
     await Promise.all([store.save(ended), records.addNotice(notice)]);
+    if (notice.multica) poster.wake(review.review_id);
     log(`${ended.state} round ${ended.round} of Review ${ended.review_id}`);
     pageRounds.publish(roundOf(ended));
     await listeners.noticeStored(notice);
@@ -445,6 +457,13 @@ export async function startReviewService(options: ReviewServiceOptions): Promise
     public: PUBLIC_ORIGIN,
     temporary: options.temporaryOrigin ?? DEFAULT_TEMPORARY_ORIGIN,
   };
+  const poster = new MulticaPoster({
+    records, profile: options.multicaProfile ?? null, home: options.multicaHome, log,
+    reviewOf: (id) => {
+      const review = store.get(id);
+      return review ? { file: review.file, link: reviewLink(id, review.visibility, origins) } : undefined;
+    },
+  });
   log(`review service listening on ${url} with ${store.all().length} Review(s) in ${store.dir}`);
 
   const doorOptions = {
@@ -491,6 +510,7 @@ export async function startReviewService(options: ReviewServiceOptions): Promise
       await Promise.all(doors.map((door) => door.stop()));
       await pages.stopAll();
       server.stop(true);
+      await poster.stop();
       await records.settled();
     },
   };
