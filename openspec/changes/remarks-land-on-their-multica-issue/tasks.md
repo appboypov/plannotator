@@ -16,7 +16,7 @@
 
 ## 4. Service and docs
 
-- [ ] 4.1 `apps/hook/server/launch-agent.ts`: the plan sets `PLANNOTATOR_MULTICA_PROFILE=skuddy` and carries the installing shell's value. Verify: the launch-agent plan test reads the whole environment: the profile name and no token.
+- [x] 4.1 `apps/hook/server/launch-agent.ts`: the plan sets `PLANNOTATOR_MULTICA_PROFILE=skuddy` and carries the installing shell's value. Verify: the launch-agent plan test reads the whole environment: the profile name and no token.
 - [ ] 4.2 `docs/review-api.md` (minor 3, the open's `issue`, its refusals, the list's `issue`, "Comments on the Multica issue", linked Reviews and listeners), `docs/invariants.md` (delivery state, poster order and retry, listen exclusion), `fork/README.md` (the setting). Verify: read through against the specs.
 - [ ] 4.3 The fork check passes (`bun fork/ci-check.ts`, through Crabbox or locally) and `openspec validate remarks-land-on-their-multica-issue --type change --strict` passes.
 
@@ -29,3 +29,4 @@
 - 2.3: `MulticaPoster` owns independent lanes, startup scan, 15-second abortable HTTP attempts, 1-second doubling retry capped at five minutes, per-attempt scratch/profile reads, safe logs and clean stop. Fake-server proof covers ordered comments, acknowledgement/reload, 503 then missing-id retries, token rotation, independent Reviews, pending restart, immediate relink and in-flight relink/abort (7 tests, 35 assertions pass). HTTP success whose reply is lost remains accepted at-least-once delivery, as ADR-0010 says.
 - 2.4: `service.ts` injects current issue lookup into records, starts/stops the poster and wakes after persisted page events and relinks, including ended Reviews. `service.test.ts` sends real page HTTP feedback (two annotations), Approve and Cancel against upstream annotate pages and a fake Multica server (19 tests, 88 assertions pass). Test profile roots are scratch dirs, never real profiles.
 - 3.1: `listen.ts` reads the linked predicate at every line lookup, with `service.ts` providing current store state. `listen.test.ts` proves both all/named sockets receive no linked events or pre-link backlog, hand-over stays silent, list listeners are empty and an unlinked Review still delivers (29 tests, 150 assertions pass).
+- 4.1: `launch-agent.ts` plans the default `skuddy` profile and carries an override. `service-command.test.ts` checks the full planned environment and refuses carrying an injected fake token (16 tests, 55 assertions pass). No real install or launchd operation ran.
