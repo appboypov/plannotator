@@ -10,6 +10,7 @@
  * page's Remarks with their Replies (`api/review-replies`).
  * Contract: docs/review-api.md.
  */
+import { randomBytes } from "node:crypto";
 import { realpath, stat } from "node:fs/promises";
 import { canonicalPRSubject } from "@plannotator/shared/review-api/subject";
 import {
@@ -203,13 +204,15 @@ export async function startReviewService(options: ReviewServiceOptions): Promise
     if (!parsed.ok) return error(400, parsed.error);
     const { file: requested, visibility, reopen } = parsed.value;
     let file = canonicalPRSubject(requested);
+    const pr = file !== undefined;
     if (!file) {
       const found = await stat(requested).catch(() => undefined);
       if (!found?.isFile()) return error(404, `file not found: ${requested}`);
       file = await realpath(requested);
     }
-    const reviewId = reviewIdForFile(file);
-    const existing = store.get(reviewId);
+    const existing = store.find(file);
+    // A PR URL is public, so a PR Review's id, the secret part of its door link, is random (ADR 0009).
+    const reviewId = existing?.review_id ?? (pr ? randomBytes(8).toString("hex") : reviewIdForFile(file));
     // The reviewer's Approve stands until the agent asks to reopen it; nothing is written.
     if (existing?.state === "finished" && !reopen) {
       return Response.json({

@@ -75,7 +75,6 @@ test("GitLab and Bitbucket URL suffixes use their provider number and canonical 
     ["https://bitbucket.org/workspace/repo/pull-requests/7/diff", "https://bitbucket.org/workspace/repo/pull-requests/7"],
   ]) {
     const review = await open(url);
-    expect(review.review_id).toBe(reviewIdForFile(canonical!));
     const listed = await (await fetch(`${service.url}/api/review/v1/reviews?file=${encodeURIComponent(url!)}`)).json();
     expect(listed.reviews[0]).toMatchObject({ review_id: review.review_id, file: canonical });
   }
@@ -83,7 +82,6 @@ test("GitLab and Bitbucket URL suffixes use their provider number and canonical 
 
 test("open and filtered list canonicalize PR URLs without starting a page and survive restart", async () => {
   const first = await open(`${PR}/files`);
-  expect(first.review_id).toBe(reviewIdForFile(PR));
   expect(await open(`${PR}/`)).toEqual(first);
   expect(await open("https://github.com/OWNER/Repo/pull/22")).toEqual(first);
   const listed = await (await fetch(`${service.url}/api/review/v1/reviews?file=${encodeURIComponent(PR + "/files/")}`)).json();
@@ -92,6 +90,7 @@ test("open and filtered list canonicalize PR URLs without starting a page and su
   await service.stop();
   service = await startReviewService({ port: 0, reviewsDir: dir, version: "test", log: () => {}, startPage: async () => { throw new Error("not requested"); } });
   expect((await (await fetch(`${service.url}/api/review/v1/reviews`)).json()).reviews[0].file).toBe(PR);
+  expect((await open(PR)).review_id).toBe(first.review_id);
   for (const url of ["https://example.com/not-a-pr", "http://example.com/no"]) {
     const bad = await post(`${service.url}/api/review/v1/reviews`, { file: url });
     expect(bad.status).toBe(400);
@@ -202,6 +201,20 @@ test("PR door reads strip local paths, refuse external writes and stop at visibi
   const file = join(dir, "plan.md"); await writeFile(file, "Plan");
   const plan = await open(file, { visibility: "public" });
   expect((await fetch(`http://127.0.0.1:${service.doors[0]!.port()}/plannotator/session/${plan.review_id}/api/file-content?path=a.ts`)).status).toBe(404);
+});
+
+test("a door refuses a PR Review under the id worked out from its URL", async () => {
+  const review = await open(PR, { visibility: "public" });
+  const computed = reviewIdForFile(PR);
+  expect(review.review_id).not.toBe(computed);
+  const sessions = `http://127.0.0.1:${service.doors[0]!.port()}/plannotator/session/`;
+  for (const route of ["", "api/diff", "api/pr-context"]) expect((await fetch(`${sessions}${computed}/${route}`)).status).toBe(404);
+  for (const route of ["api/feedback", "api/approve", "api/exit?round=1"]) {
+    expect((await post(`${sessions}${computed}/${route}`, { approved: true, feedback: "lgtm (not Brian)" })).status).toBe(404);
+  }
+  const listed = await (await fetch(`${service.url}/api/review/v1/reviews?file=${encodeURIComponent(PR)}`)).json();
+  expect(listed.reviews[0]).toMatchObject({ review_id: review.review_id, state: "open", open_items: [] });
+  expect((await fetch(`${sessions}${review.review_id}/api/diff`)).status).toBe(200);
 });
 
 test("door manifest allows only PR read queries and Review commands", () => {

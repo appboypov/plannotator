@@ -19,6 +19,14 @@
 - [x] 4.2 Cover URL subjects, mapping, routing, doors and CLI with focused tests.
 - [x] 4.3 Run focused tests, fork check and isolated real-PR smoke.
 
+## 5. PR links that no public input gives
+
+- [x] 5.1 `packages/server/review-service/store.ts` -- add `ReviewStore.find(subject)` -- a PR Review's id must not follow from its URL, so open finds Reviews by subject.
+- [x] 5.2 `packages/server/review-service/service.ts` -- open finds the Review by canonical subject and gives a new PR Review a random id -- the door link's secret part.
+- [x] 5.3 `packages/server/review-service/pr-reviews.test.ts` -- a door test refuses page, read, Remark, Approve and Close under the URL-hashed id; the id survives a restart.
+- [x] 5.4 `adr/0009-one-upstream-review-server-per-pr-review.md`, `docs/invariants.md`, `docs/review-api.md` -- record that a PR Review's id is random and secret.
+- [x] 5.5 Run `bun test packages/server/review-service/pr-reviews.test.ts`: all pass, the door test included.
+
 ## Implementation Notes
 
 The service reuses the upstream PR parser, review server, embedded HTML and review output formatter.

@@ -2,7 +2,7 @@
 
 ## Subjects
 
-A shared fork-owned subject module uses upstream parsePRUrl and formats its platform fields into a canonical URL. Open validates without network I/O. File subjects retain realpath resolution. Persisted subjects use the existing file field and SHA-256 id.
+A shared fork-owned subject module uses upstream parsePRUrl and formats its platform fields into a canonical URL. Open validates without network I/O. File subjects retain realpath resolution. Persisted subjects use the existing file field. Open finds a Review by its canonical subject. A file Review's id stays the SHA-256 of its path. A PR Review's id is 16 random hex characters made at first open: a PR URL is public, so a hashed id would let anyone work out a public or temporary link and Approve through the door.
 
 ## Pages and decisions
 

@@ -15,7 +15,7 @@ export type StoredReview = Pick<
 
 const STATES: readonly string[] = ["open", "finished", "cancelled"];
 
-/** A Review's id: the first 16 hex characters of the SHA-256 of its canonical subject. */
+/** A file Review's id: the first 16 hex characters of the SHA-256 of its canonical path. */
 export function reviewIdForFile(canonicalFile: string): ReviewId {
   return createHash("sha256").update(canonicalFile).digest("hex").slice(0, 16);
 }
@@ -58,6 +58,12 @@ export class ReviewStore {
 
   all(): StoredReview[] {
     return [...this.reviews.values()];
+  }
+
+  /** The Review of [subject], a canonical file path or PR/MR URL. */
+  find(subject: string): StoredReview | undefined {
+    for (const review of this.reviews.values()) if (review.file === subject) return review;
+    return undefined;
   }
 
   /** The folder that holds this Review's state; later stories keep Remarks and Replies here. */
