@@ -8,6 +8,7 @@ import { remarksFromFeedback } from "./records";
 import { matchDoorRequest } from "./door-manifest";
 import { reviewThroughService, reviewsThroughService } from "../../../apps/hook/server/review-service-client";
 import type { OpenReviewResponse } from "@plannotator/shared/review-api";
+import { getReviewDeniedSuffix } from "@plannotator/shared/prompts";
 
 const PR = "https://github.com/owner/repo/pull/22";
 let dir: string;
@@ -84,6 +85,7 @@ test("open and filtered list canonicalize PR URLs without starting a page and su
   const first = await open(`${PR}/files`);
   expect(first.review_id).toBe(reviewIdForFile(PR));
   expect(await open(`${PR}/`)).toEqual(first);
+  expect(await open("https://github.com/OWNER/Repo/pull/22")).toEqual(first);
   const listed = await (await fetch(`${service.url}/api/review/v1/reviews?file=${encodeURIComponent(PR + "/files/")}`)).json();
   expect(listed.reviews[0]).toMatchObject({ review_id: first.review_id, file: PR, open_items: [] });
   expect(starts).toBe(0);
@@ -233,4 +235,14 @@ for (const decision of ["approve", "feedback", "close"] as const) test(`PR CLI t
     const listed = await (await fetch(`${service.url}/api/review/v1/reviews?file=${encodeURIComponent(PR)}`)).json();
     expect(listed.reviews[0]).toMatchObject({ state: "cancelled", open_item_count: 0 });
   }
+});
+
+test("PR CLI feedback with only a review-wide code comment asks to address it", async () => {
+  const opened = Promise.withResolvers<OpenReviewResponse>();
+  const result = reviewThroughService({ file: PR, port: service.port, onOpened: opened.resolve, reconnect: { attempts: 0, delayMs: 0 } });
+  const review = await opened.promise;
+  await post(`${review.link}api/feedback`, { round: 1, approved: false, feedback: "Overall: split this PR", annotations: [{ filePath: "", scope: "general", type: "COMMENT", text: "Split this PR" }] });
+  const ended = await result;
+  if (!ended.ok) throw new Error(ended.error);
+  expect(ended.output).toEqual({ decision: "annotated", message: `Overall: split this PR\n${getReviewDeniedSuffix(undefined)}` });
 });

@@ -290,7 +290,9 @@ function waitForRound(
     // Close that ended the Round before this call's Cancel landed does not turn it into one.
     if (sent.length > 0) {
       const outcome = { feedback: feedbackOf(sent) };
-      void answer(sent).then(() => settle({ ok: true, outcome, ...(options.command === "review" ? { annotations: sent.filter((remark) => remark.anchor.tag !== "global_comment") } : {}) }));
+      // Only the text-only Remark of a send without annotations is no annotation; a review-wide code comment is one.
+      const annotations = sent.filter((remark) => !(remark.anchor.tag === "global_comment" && remark.anchor.selector === "" && remark.text === remark.feedback));
+      void answer(sent).then(() => settle({ ok: true, outcome, ...(options.command === "review" ? { annotations } : {}) }));
     } else if (notice.type === "cancel") {
       settle({ ok: false, error: `Round ${review.round} of ${review.link} was cancelled by another agent.` });
     } else if (notice.dismissed) settle({ ok: true, outcome: { feedback: "", exit: true } });

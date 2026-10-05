@@ -1,4 +1,5 @@
 import { canonicalPRSubject } from "@plannotator/shared/review-api/subject";
+import { reviewPagePath } from "@plannotator/shared/review-api";
 import type { Origin } from "@plannotator/shared/agents";
 import { handleReviewServerReady } from "@plannotator/server/review";
 import { isRemoteSession } from "@plannotator/server/annotate";
@@ -38,8 +39,11 @@ export async function runServiceReviewCommand(options: { file: string; json: boo
     port: port.value,
     origin: options.origin,
     onOpened: (review) => {
-      process.stderr.write(`\nPlannotator review, round ${review.round}:\n${review.link}\n`);
-      handleReviewServerReady(review.link, isRemoteSession(), port.value);
+      // This Mac opens the service's own page; a public or temporary link is printed for other devices.
+      const local = `http://127.0.0.1:${port.value}${reviewPagePath(review.review_id)}`;
+      const shared = review.link === local ? "" : `\n${review.link}`;
+      process.stderr.write(`\nPlannotator review, round ${review.round}:\n${local}${shared}\n`);
+      handleReviewServerReady(local, isRemoteSession(), port.value);
     },
     log: (line) => console.error(`[plannotator] ${line}`),
   });

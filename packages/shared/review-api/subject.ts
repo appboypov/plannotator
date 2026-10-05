@@ -6,7 +6,8 @@ export function canonicalPRSubject(value: string): string | undefined {
   const ref = parsePRUrl(value);
   if (!ref) return undefined;
   switch (ref.platform) {
-    case "github": return `https://${ref.host.toLowerCase()}/${ref.owner}/${ref.repo}/pull/${ref.number}`;
+    // GitHub owner and repo names are case-insensitive, so every casing names one Review.
+    case "github": return `https://${ref.host.toLowerCase()}/${ref.owner.toLowerCase()}/${ref.repo.toLowerCase()}/pull/${ref.number}`;
     case "gitlab": return `https://${ref.host.toLowerCase()}/${ref.projectPath}/-/merge_requests/${ref.iid}`;
     case "bitbucket": return `https://bitbucket.org/${ref.workspace}/${ref.repo}/pull-requests/${ref.number}`;
   }
