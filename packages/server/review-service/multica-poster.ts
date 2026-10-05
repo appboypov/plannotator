@@ -30,8 +30,7 @@ export function buildMulticaComment(review: { file: string; link: string }, reco
       ? `\n\n${withoutMentions(record.notes).split(/\r?\n/).map((line) => `> ${line}`).join("\n")}` : "";
     return `${title}${notes}\n\n- Notice: ${id}\n- Review: ${reviewId}`;
   }
-  const quote = record.text
-    ? `${withoutMentions(record.text).split(/\r?\n/).map((line) => `> ${line}`).join("\n")}\n\n` : "";
+  const quote = `${withoutMentions(record.text || "(no text)").split(/\r?\n/).map((line) => `> ${line}`).join("\n")}\n\n`;
   // A remark with no block and no excerpt (a general comment) is about the whole page.
   const { tag, selector, text } = record.anchor;
   const excerpt = withoutMentions(text).replace(/\s+/g, " ").trim();
@@ -140,6 +139,7 @@ export class MulticaPoster {
             headers: { authorization: `Bearer ${profile.token}`, "content-type": "application/json",
               "X-Workspace-ID": record.multica.workspace_id },
             body: JSON.stringify({ content: buildMulticaComment(review, record) }),
+            redirect: "error",
             signal: AbortSignal.any([this.stopping.signal, AbortSignal.timeout(POST_TIMEOUT_MS)]),
           });
         status = response.status;
@@ -147,10 +147,14 @@ export class MulticaPoster {
           await response.body?.cancel();
           throw new Error("post refused");
         }
-        const comment: unknown = await response.json();
-        if (comment === null || typeof comment !== "object" || !("id" in comment) ||
-            typeof comment.id !== "string" || !comment.id.trim()) throw new Error("comment id missing");
-        await records.markPosted(record.id, comment.id, new Date().toISOString(), record.multica);
+        // Any 2xx counts as posted; the comment id is kept when the answer carries one.
+        const comment: unknown = await response.json().catch(() => null);
+        const commentId = comment !== null && typeof comment === "object" && "id" in comment &&
+          typeof comment.id === "string" && comment.id.trim() ? comment.id : null;
+        if (!await records.markPosted(record.id, commentId, new Date().toISOString(), record.multica)) {
+          log(`multica pending review=${encodeURIComponent(reviewId)} id=${encodeURIComponent(record.id)} kind=${kind} status=${status} cause=moved`);
+          continue;
+        }
         lane.delay = FIRST_RETRY_MS;
         log(`multica posted review=${encodeURIComponent(reviewId)} id=${encodeURIComponent(record.id)} kind=${kind} status=${status}`);
       } catch (error) {

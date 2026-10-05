@@ -19,12 +19,12 @@ test("remarks quote each line, neutralize mentions and fence backticks in anchor
   expect(comment).toContain(`**Remark** on [plan.md](${review.link}), round 1:`);
 });
 
-test("an empty anchor means the whole page; deletion keeps its anchor without quoting absent words", () => {
+test("an empty anchor means the whole page; deletion keeps its anchor and says it has no text", () => {
   expect(buildMulticaComment(review, { ...remark, anchor: { tag: "", selector: "", text: "" } })).toContain("- On: the whole page");
   expect(buildMulticaComment(review, { ...remark, anchor: { tag: "global_comment", selector: "", text: "" } })).toContain("- On: the whole page\n");
   const deletion = buildMulticaComment(review, { ...remark, text: "", anchor: { tag: "deletion", selector: "block-1", text: "Remove" } });
   expect(deletion).toContain('- On: `deletion` `block-1`: "Remove"');
-  expect(deletion).not.toContain("> ");
+  expect(deletion).toContain(":\n\n> (no text)\n\n- Item:");
 });
 
 test("Approve quotes notes without mentions, no-notes Approve and Close retain notice identity", () => {
@@ -100,13 +100,13 @@ test("three Remarks and Approve post in store order, acknowledge durably and nev
   expect(f.logs.join("\n")).not.toContain("> one");
 });
 
-test("refusal and missing comment id retry in order and read the rotated profile each time", async () => {
+test("refusals retry in order and read the rotated profile each time; any 2xx counts as posted", async () => {
   const attempts: { at: number; auth: string; content: string }[] = [];
   const f = await fixture(async (request) => {
     attempts.push({ at: Date.now(), auth: request.headers.get("authorization")!, content: (await request.json()).content });
     if (attempts.length === 1) return new Response("refused", { status: 503 });
-    if (attempts.length === 2) return Response.json({});
-    return Response.json({ id: "posted" }, { status: 201 });
+    if (attempts.length === 2) return new Response("refused", { status: 502 });
+    return new Response(null, { status: 204 });
   });
   const added = remarksFromFeedback({ feedback: "private reviewer words" }, remark, remark.at);
   await f.records.addRemarks(remark.review_id, added);
@@ -117,6 +117,7 @@ test("refusal and missing comment id retry in order and read the rotated profile
   writeFileSync(f.profile, JSON.stringify({ ...config, token: "rotated-secret" }));
   poster.wake(remark.review_id); // new records do not bypass a failed lane's backoff
   await waitFor(() => added[0].multica?.status === "posted");
+  expect(added[0].multica).not.toHaveProperty("comment_id");
   expect(attempts.map((a) => a.auth)).toEqual(["Bearer scratch-secret", "Bearer rotated-secret", "Bearer rotated-secret"]);
   expect(attempts[1].at - attempts[0].at).toBeGreaterThanOrEqual(900);
   expect(attempts[2].at - attempts[1].at).toBeGreaterThanOrEqual(1900);
@@ -140,14 +141,28 @@ test("restart drains pending records; relink immediately releases a failed lane 
   const second = "abcdef0123456789";
   const other = remarksFromFeedback({ feedback: "other" }, { review_id: second, round: 1 }, remark.at);
   await loaded.addRemarks(second, other);
-  await loaded.relink(second, { id: "WORK-2", workspace_id: "W2" });
+  await loaded.relink(second, { id: "WORK-2", workspace_id: "W2" }, 1);
   poster.wake(second);
   await waitFor(() => other[0].multica?.status === "posted");
   expect(loaded.pendingDeliveries(remark.review_id)[0].multica?.status).toBe("pending");
-  await loaded.relink(remark.review_id, { id: "WORK-3", workspace_id: "W3" });
+  await loaded.relink(remark.review_id, { id: "WORK-3", workspace_id: "W3" }, 1);
   poster.wake(remark.review_id, true);
   await waitFor(() => loaded.pendingDeliveries(remark.review_id).length === 0);
   expect(paths).toEqual(["/api/issues/WORK-1/comments", "/api/issues/WORK-2/comments", "/api/issues/WORK-3/comments"]);
+});
+
+test("a post refuses redirects, so the token never follows one", async () => {
+  const paths: string[] = [];
+  const f = await fixture((request) => {
+    paths.push(new URL(request.url).pathname);
+    return paths.at(-1)!.endsWith("/comments") ? Response.redirect("/elsewhere", 307) : Response.json({ id: "leaked" }, { status: 201 });
+  });
+  const added = remarksFromFeedback({ feedback: "redirected" }, remark, remark.at);
+  await f.records.addRemarks(remark.review_id, added);
+  f.poster();
+  await waitFor(() => f.logs.some((line) => line.startsWith("multica pending")));
+  expect(paths).toEqual(["/api/issues/WORK-1/comments"]);
+  expect(added[0].multica?.status).toBe("pending");
 });
 
 test("a relink during HTTP cannot acknowledge the new destination with the old response; stop aborts an active post", async () => {
@@ -162,12 +177,14 @@ test("a relink during HTTP cannot acknowledge the new destination with the old r
   await f.records.addRemarks(remark.review_id, added);
   const poster = f.poster();
   await entered.promise;
-  await f.records.relink(remark.review_id, { id: "WORK-2", workspace_id: "W2" });
+  await f.records.relink(remark.review_id, { id: "WORK-2", workspace_id: "W2" }, 1);
   poster.wake(remark.review_id, true);
   release.resolve();
   await waitFor(() => added[0].multica?.status === "posted");
   expect(paths).toEqual(["/api/issues/WORK-1/comments", "/api/issues/WORK-2/comments"]);
   expect(added[0].multica).toMatchObject({ issue: "WORK-2", comment_id: "comment-2" });
+  expect(f.logs.filter((line) => line.startsWith("multica posted"))).toHaveLength(1);
+  expect(f.logs.some((line) => line.startsWith("multica pending") && line.endsWith("cause=moved"))).toBe(true);
   await poster.stop();
   const activeRequest = Promise.withResolvers<void>();
   const hanging = await fixture(() => { activeRequest.resolve(); return new Promise<Response>(() => {}); });
