@@ -1,3 +1,4 @@
+import '../hook/review-page-base'; // Fork: session-path API and Round closure.
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import App from '@plannotator/review-editor';

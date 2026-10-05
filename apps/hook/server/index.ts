@@ -193,6 +193,7 @@ import { exitOnUnknownSubcommand } from "./unknown-subcommand";
 import { completeAnnotateCommand } from "./annotate-command";
 import { annotatesThroughService, runServiceAnnotateCommand } from "./annotate-service"; // Fork: annotate through the review service
 import { runServeCommand } from "./serve-command"; // fork: review service
+import { reviewsThroughService, runServiceReviewCommand } from "./review-service-client"; // Fork: PR review through the service.
 import { liveServiceContext, runServiceCommand } from "./service-command"; // fork: review service LaunchAgent
 import {
   annotateStartupFailureExitCode,
@@ -806,6 +807,7 @@ if (args[0] === "sessions") {
     args: args.slice(1),
     version: getCliVersion() ?? "dev",
     page: { htmlContent: planHtmlContent, origin: detectedOrigin, sharingEnabled, shareBaseUrl, pasteApiUrl },
+    reviewHtmlContent,
   });
 
 } else if (args[0] === "setup-goal") {
@@ -886,6 +888,9 @@ if (args[0] === "sessions") {
     process.exit(1);
   }
   const urlArg = reviewArgs.prUrl;
+  if (reviewsThroughService(rawArgs.slice(1))) {
+    await runServiceReviewCommand({ file: urlArg!, json: jsonFlag, origin: detectedOrigin });
+  }
   const reviewDirectory = resolveCliReviewDirectory(reviewArgs, process.env.PLANNOTATOR_CWD || process.cwd());
   let reviewCwd = reviewDirectory ?? process.cwd();
   const isPRMode = urlArg !== undefined;

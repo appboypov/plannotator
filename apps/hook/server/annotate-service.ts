@@ -34,7 +34,7 @@ import { completeAnnotateCommand } from "./annotate-command";
 import type { AnnotateOutcome } from "./strict-annotate-result";
 
 /** What a call ends with: the reviewer's outcome, or why the gate could not run. */
-export type ServiceAnnotateResult = { ok: true; outcome: AnnotateOutcome } | { ok: false; error: string };
+export type ServiceAnnotateResult = { ok: true; outcome: AnnotateOutcome; annotations?: readonly Remark[] } | { ok: false; error: string };
 
 export interface ServiceAnnotateOptions {
   /** The document's absolute path. */
@@ -48,6 +48,8 @@ export interface ServiceAnnotateOptions {
   /** How often to reconnect a listen socket the service dropped, and how long to wait between tries. */
   reconnect?: { attempts: number; delayMs: number };
   log?: (line: string) => void;
+  /** The consumer identity for its listen session and taken-Remark Reply. */
+  command?: "annotate" | "review";
 }
 
 const DEFAULT_RECONNECT = { attempts: 30, delayMs: 1_000 };
@@ -188,7 +190,9 @@ function waitForRound(
   review: OpenReviewResponse,
   options: ServiceAnnotateOptions,
 ): Promise<ServiceAnnotateResult> {
-  const sessionId = options.sessionId ?? annotateSessionId();
+  const sessionId = options.sessionId ?? (options.command === "review"
+    ? `plannotator-review-${process.pid}-${randomBytes(6).toString("hex")}`
+    : annotateSessionId());
   const reconnect = options.reconnect ?? DEFAULT_RECONNECT;
   const log = options.log ?? (() => {});
   // A reconnect listens under a new session id: the service marks a Remark delivered when
@@ -268,7 +272,7 @@ function waitForRound(
       const response = await fetch(`${origin}${repliesPath(review.review_id)}`, {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ text: TAKEN_REPLY, answers: taken.map((remark) => remark.id) }),
+        body: JSON.stringify({ text: options.command === "review" ? "Received by plannotator review." : TAKEN_REPLY, answers: taken.map((remark) => remark.id) }),
         signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
       });
       if (!response.ok) log(`could not answer the Remarks of ${review.review_id}: HTTP ${response.status}`);
@@ -286,7 +290,7 @@ function waitForRound(
     // Close that ended the Round before this call's Cancel landed does not turn it into one.
     if (sent.length > 0) {
       const outcome = { feedback: feedbackOf(sent) };
-      void answer(sent).then(() => settle({ ok: true, outcome }));
+      void answer(sent).then(() => settle({ ok: true, outcome, ...(options.command === "review" ? { annotations: sent.filter((remark) => remark.anchor.tag !== "global_comment") } : {}) }));
     } else if (notice.type === "cancel") {
       settle({ ok: false, error: `Round ${review.round} of ${review.link} was cancelled by another agent.` });
     } else if (notice.dismissed) settle({ ok: true, outcome: { feedback: "", exit: true } });

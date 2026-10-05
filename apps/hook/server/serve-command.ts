@@ -8,6 +8,8 @@ import { mkdir } from "node:fs/promises";
 import { dirname } from "node:path";
 import { startAnnotateServer, type AnnotateServerOptions } from "@plannotator/server/annotate";
 import { detectProjectName } from "@plannotator/server/project";
+import { startReviewServer } from "@plannotator/server/review";
+import { parsePRUrl, checkPRAuth, fetchPR, getMRLabel, getMRNumberLabel, getDisplayRepo } from "@plannotator/server/pr";
 import {
   DEFAULT_PUBLIC_HOST,
   DEFAULT_PUBLIC_PEER,
@@ -61,6 +63,7 @@ export async function runServeCommand(options: {
   args: readonly string[];
   version: string;
   page: ServePageDefaults;
+  reviewHtmlContent: string;
 }): Promise<void> {
   if (options.args.includes("--help") || options.args.includes("-h")) {
     console.log(SERVE_USAGE);
@@ -83,6 +86,25 @@ export async function runServeCommand(options: {
   process.chdir(reviewsDir);
 
   const startPage: StartReviewPage = async (review) => {
+    const ref = parsePRUrl(review.file);
+    if (ref) {
+      await checkPRAuth(ref);
+      console.error(`[plannotator] fetching ${review.file} for Review ${review.review_id} round ${review.round}`);
+      const pr = await fetchPR(ref);
+      const page = await startReviewServer({
+        rawPatch: pr.rawPatch,
+        gitRef: `${getMRLabel(ref)} ${getMRNumberLabel(ref)}`,
+        prMetadata: pr.metadata,
+        prPatchIncomplete: pr.patchIncomplete ?? false,
+        project: getDisplayRepo(ref),
+        origin: options.page.origin,
+        sharingEnabled: options.page.sharingEnabled,
+        shareBaseUrl: options.page.shareBaseUrl,
+        approvalNotesSupported: true,
+        htmlContent: options.reviewHtmlContent,
+      });
+      return { port: page.port, stop: page.stop };
+    }
     const projectRoot = dirname(review.file);
     const resolution = await resolveAnnotateTarget({
       rawFilePath: review.file,

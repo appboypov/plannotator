@@ -11,6 +11,7 @@
  * Contract: docs/review-api.md.
  */
 import { realpath, stat } from "node:fs/promises";
+import { canonicalPRSubject } from "@plannotator/shared/review-api/subject";
 import {
   API_VERSION,
   DEFAULT_TEMPORARY_ORIGIN,
@@ -185,6 +186,9 @@ export async function startReviewService(options: ReviewServiceOptions): Promise
     // The page calls its API relative to its own path, which needs the trailing slash.
     if (rest.length === 0) return Response.redirect(`${reviewPagePath(reviewId)}${url.search}`, 308);
     const path = `/${rest.join("/")}`;
+    // PR read routes behind a door belong only to a PR subject, never to a local file page.
+    if (url.hostname === "door" && ["/api/diff", "/api/diff/fresh", "/api/pr-context", "/api/pr-context/stream", "/api/file-content", "/api/review-image"].includes(path)
+      && !canonicalPRSubject(review.file)) return error(404, "not found");
     const command = method === "POST" ? PAGE_COMMANDS[path] : undefined;
     if (command) return pageCommand(command, review, request, url);
     if (method === "GET" && path === ROUND_STREAM_PATH) return pageRounds.stream(roundOf(review));
@@ -197,9 +201,12 @@ export async function startReviewService(options: ReviewServiceOptions): Promise
     const parsed = parseOpenReviewRequest(body);
     if (!parsed.ok) return error(400, parsed.error);
     const { file: requested, visibility, reopen } = parsed.value;
-    const found = await stat(requested).catch(() => undefined);
-    if (!found?.isFile()) return error(404, `file not found: ${requested}`);
-    const file = await realpath(requested);
+    let file = canonicalPRSubject(requested);
+    if (!file) {
+      const found = await stat(requested).catch(() => undefined);
+      if (!found?.isFile()) return error(404, `file not found: ${requested}`);
+      file = await realpath(requested);
+    }
     const reviewId = reviewIdForFile(file);
     const existing = store.get(reviewId);
     // The reviewer's Approve stands until the agent asks to reopen it; nothing is written.
@@ -250,7 +257,7 @@ export async function startReviewService(options: ReviewServiceOptions): Promise
     const parsed = parseListReviewsQuery(fileQuery);
     if (!parsed.ok) return error(400, parsed.error);
     const { file } = parsed.value;
-    const canonical = file === undefined ? undefined : await realpath(file).catch(() => file);
+    const canonical = file === undefined ? undefined : canonicalPRSubject(file) ?? await realpath(file).catch(() => file);
     const reviews = store
       .all()
       .filter((review) => canonical === undefined || review.file === canonical)
@@ -337,6 +344,7 @@ export async function startReviewService(options: ReviewServiceOptions): Promise
   async function pageCommand(command: PageCommand, review: StoredReview, request: Request, url: URL): Promise<Response> {
     const body = command === "exit" ? {} : await readJson(request);
     if (body === MALFORMED) return error(400, "malformed JSON");
+    if (command === "feedback" && canonicalPRSubject(review.file) && field(body, "approved") === true) command = "approve";
     const roundQuery = url.searchParams.get("round");
     const round = parsePageRound(command === "exit" ? (roundQuery === null ? undefined : Number(roundQuery)) : field(body, "round"));
     if (!round.ok) return error(400, round.error);

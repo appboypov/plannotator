@@ -1,0 +1,21 @@
+# Design
+
+## Subjects
+
+A shared fork-owned subject module uses upstream parsePRUrl and formats its platform fields into a canonical URL. Open validates without network I/O. File subjects retain realpath resolution. Persisted subjects use the existing file field and SHA-256 id.
+
+## Pages and decisions
+
+The serve starter branches on the stored subject. PR startup checks auth, fetches the current head and starts upstream startReviewServer with the embedded review HTML and no local checkout. ReviewPages retains its single-flight startup and retry behavior; reopening stops the page. The code review entry imports the fork page glue first. The service translates approved feedback to Finish and code annotations to Remarks, preserving draft clearing and Round refusals.
+
+## Doors
+
+The manifest allows only the read routes needed for the PR diff, context, file expansion and diff images plus existing Review commands. PR-only routes refuse file Reviews through a door. Diff responses lose local context, repo and git-user fields. Write routes outside Review state remain denied.
+
+## CLI
+
+The existing annotate service transport accepts a command identity and carries whether taken Remarks contain annotations. A thin review client uses upstream buildReviewOutput and handleReviewServerReady. Only a PR URL with optional --json uses this path. Other targets and mode flags keep upstream behavior.
+
+## Verification
+
+Fake page starters cover lifecycle and decision boundaries without GitHub. A dev service uses isolated state and free loopback ports with doors off. A real public PR proves session HTML, diff and listen-socket Remark and Finish delivery.

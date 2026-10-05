@@ -1,6 +1,7 @@
 import { createHash, randomBytes } from "node:crypto";
 import { mkdir, readdir, readFile, rename, writeFile } from "node:fs/promises";
-import { isAbsolute, join } from "node:path";
+import { join } from "node:path";
+import { parseReviewSubject } from "@plannotator/shared/review-api/subject";
 import { isReviewId, VISIBILITIES, type Review, type ReviewId } from "@plannotator/shared/review-api";
 
 /** A Review's state file inside its own folder: `<reviews dir>/<review_id>/review.json`. */
@@ -92,7 +93,7 @@ export function parseStoredReview(value: unknown, folderId: string): StoredRevie
   const fields = value as Record<string, unknown>;
   const { review_id, file, visibility, round, state, round_opened_at, last_page_open } = fields;
   if (review_id !== folderId || !isReviewId(review_id)) return undefined;
-  if (typeof file !== "string" || !isAbsolute(file)) return undefined;
+  if (typeof file !== "string" || !parseReviewSubject(file).ok) return undefined;
   if (!VISIBILITIES.includes(visibility as never)) return undefined;
   if (typeof round !== "number" || !Number.isInteger(round) || round < 1) return undefined;
   if (typeof state !== "string" || !STATES.includes(state)) return undefined;

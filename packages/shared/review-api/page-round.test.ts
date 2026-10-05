@@ -70,6 +70,16 @@ describe("installReviewPageRound", () => {
     expect(approved.closures).toEqual([]);
   });
 
+  test("code-review approval through feedback keeps its completion screen and pins the Round", async () => {
+    const approved = page(BASE, undefined, "3");
+    await approved.globals.fetch(`${BASE}api/feedback`, { method: "POST", body: JSON.stringify({ approved: true, draftGeneration: 4 }) });
+    expect(JSON.parse(String(approved.sent[0]!.init?.body))).toEqual({ approved: true, draftGeneration: 4, round: 3 });
+    await approved.push(3, "finished");
+    expect(approved.closures).toEqual([]);
+    await approved.push(4, "open");
+    expect(approved.closures).toEqual([{ kind: "next-round", round: 4 }]);
+  });
+
   test("a later Round, or a refused command, closes the page once", async () => {
     const reopened = page(BASE);
     await reopened.push(1, "open");

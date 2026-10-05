@@ -6,6 +6,7 @@
 // drop or reorder either line.
 import '@plannotator/ui/utils/math-eager';
 import '@plannotator/ui/utils/identity-tater';
+import { reviewPageBase } from '@plannotator/shared/review-api/page-base'; // Fork: service Reviews send decisions only to their listener.
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { type Origin, getAgentName } from '@plannotator/shared/agents';
 import { ThemeProvider, useTheme } from '@plannotator/ui/components/ThemeProvider';
@@ -735,10 +736,12 @@ const ReviewApp: React.FC = () => {
     handleLoadFullDiff,
     handlePRSwitch,
   } = usePRStack(prStackCallbacksRef);
-  const [reviewDestination, setReviewDestination] = useState<'agent' | 'platform'>(() => {
+  const [preferredReviewDestination, setReviewDestination] = useState<'agent' | 'platform'>(() => {
     const stored = storage.getItem('plannotator-review-dest');
     return stored === 'agent' ? 'agent' : 'platform'; // 'github' (legacy) → 'platform'
   });
+  const serviceReview = reviewPageBase(window.location.pathname) !== null;
+  const reviewDestination = serviceReview ? 'agent' : preferredReviewDestination;
   const [showDestinationMenu, setShowDestinationMenu] = useState(false);
   // One-time spotlight pointing first-time PR reviewers at the destination
   // switcher. Renders only after the first-run dialog chain has fully cleared.
@@ -4525,7 +4528,7 @@ const ReviewApp: React.FC = () => {
   );
 
   const compactReviewDestination: CompactReviewDestination | undefined =
-    isCompactTouchLayout && origin && prMetadata
+    !serviceReview && isCompactTouchLayout && origin && prMetadata
       ? {
           value: reviewDestination,
           platform: prMetadata.platform,
@@ -4795,7 +4798,7 @@ const ReviewApp: React.FC = () => {
             {!isCompactTouchLayout && (origin ? (
               <>
                 {/* Destination dropdown (PR mode only) */}
-                {prMetadata && (
+                {prMetadata && !serviceReview && (
                   <div className="relative">
                     <button
                       data-pn-touch-target={isCompactTouchLayout || undefined}

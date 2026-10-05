@@ -1,6 +1,6 @@
 # appboypov/plannotator fork
 
-Brian's fork of [backnotprop/plannotator](https://github.com/backnotprop/plannotator). It follows upstream releases and adds an always-on review service for Markdown documents, the Plannotator peer of `~/Repos/Forks/pew-pew-lavish`: one lasting link per document, Rounds, Remarks and Replies that outlive an agent session, a versioned review API with a listen socket, a public door behind `https://ctas.de-appspecialist.nl/plannotator/`, a temporary door for ngrok, and launchd supervision.
+Brian's fork of [backnotprop/plannotator](https://github.com/backnotprop/plannotator). It follows upstream releases and adds an always-on review service for Markdown documents and pull/merge requests, the Plannotator peer of `~/Repos/Forks/pew-pew-lavish`: one lasting link per canonical subject, Rounds, Remarks and Replies that outlive an agent session, a versioned review API with a listen socket, a public door behind `https://ctas.de-appspecialist.nl/plannotator/`, a temporary door for ngrok, and launchd supervision.
 
 This file is the fork's README: the root `README.md` is upstream's and only points here, so upstream releases merge without conflicts there. `docs/invariants.md` holds the internals and the rules that are easy to break; `docs/review-api.md` is the wire contract.
 
@@ -43,6 +43,14 @@ curl -s -X POST http://127.0.0.1:4397/api/review/v1/reviews \
 
 Opening the same file again gives the same link. After an agent's Cancel it starts the next Round there; after the reviewer's Approve or Close it answers `"status": "user-ended"` and changes nothing unless the request adds `"reopen": true` (as `plannotator annotate` does). End a Round from the agent side with `curl -s -X POST http://127.0.0.1:4397/api/review/v1/reviews/<review_id>/cancel`.
 
+### Pull request Reviews
+
+`plannotator review https://github.com/appboypov/plannotator/pull/22` opens or reopens that PR's lasting Review in the service, prints its local link, opens upstream's code review page and waits. `--json` prints upstream's `decision` and `message`; `PLANNOTATOR_SKIP_BROWSER_OPEN=1` leaves the browser closed. Line comments reach the listen socket as ordinary Remarks; Approve finishes the Round with notes and Close finishes it as dismissed. Send feedback prints the feedback, cancels the CLI's Round and answers the Remarks it took. No service means an error naming `plannotator serve`, with no fallback. `--local`, other mode flags and other targets keep upstream's one-shot server.
+
+The open API accepts the same URL in `file`, with `visibility: "public"` or `"temporary"` for a phone link. Upstream `parsePRUrl` accepts GitHub, GitLab and Bitbucket Cloud PR/MR shapes; accepted suffixes such as `/files` and a trailing slash normalize to one canonical URL and one id. `GET /api/review/v1/reviews?file=<URL>` canonicalizes the URL the same way and reports it in `file`. Open validates shape without network access; the first page request checks provider authentication and fetches the PR. Each Round fetches the current head without a local checkout. A failed page start is logged and the next request retries.
+
+The public and temporary doors expose the PR diff, context, file expansion and diff images plus Review drafts and decisions. They refuse provider mutations (merge, PR review submission, viewed flags), local writes, agents/AI, config, upload, code navigation and switching, and strip local paths. Visibility is checked on every request. See `docs/review-api.md` and ADR 0009.
+
 ## Doors and ports
 
 The service is one process with up to three listeners. Each serves a fixed set of clients; nothing else may connect.
@@ -69,13 +77,13 @@ Set it when opening (`"visibility": "public"`) or at any time with `POST /api/re
 
 `docs/review-api.md` is the contract: Lavish's review API v1 with the same field names (`adr/0004-review-api-v1-matches-lavish.md`), so a Lavish client works against it. In short, on `127.0.0.1:4397`:
 
-- `GET /api/review/version`: `{ "major": 1, "minor": 1 }`; check the major first.
-- `POST /api/review/v1/reviews`: open or reopen a file's Review; `GET` lists Reviews (`?file=` adds its open Remarks).
+- `GET /api/review/version`: `{ "major": 1, "minor": 2 }`; check the major first.
+- `POST /api/review/v1/reviews`: open or reopen a canonical file or PR URL's Review; `GET` lists Reviews (`?file=` accepts either subject and adds its open Remarks).
 - `POST /api/review/v1/reviews/:id/replies`, `/cancel`, `/visibility`: Reply to Remarks, cancel the Round, change the Visibility.
 - `GET /api/review/v1/listen?session=<id>` (WebSocket): subscribe to Reviews; Remarks and Finish or Cancel notices wait on disk until a listener takes them, so a Remark sent while no one listens reaches the next listener. One listener holds each Review and alone receives its events: the first that names it, else the first subscribed to all; when it leaves, the next takes the Review with what it has not received (`adr/0008-one-listener-holds-each-review.md`).
 - `GET /plannotator/health`: version, API major and the LaunchAgent label.
 
-The types are in `packages/shared/review-api/`. `plannotator annotate <file>` on a local file is a client of this API (`apps/hook/server/annotate-service.ts`, `adr/0007-annotate-is-a-client-of-the-service.md`); with no service it fails and says to start it. URLs, folders, `--markdown`, live apps and `--tailscale` keep upstream's one-shot server.
+Types are in `packages/shared/review-api/`. `plannotator annotate <file>` and a plain `plannotator review <PR_URL>` are clients of this API (`apps/hook/server/annotate-service.ts`, `review-service-client.ts`, ADRs 0007 and 0009); with no service they fail and say to start it. Other upstream modes keep their one-shot server.
 
 ## Settings
 

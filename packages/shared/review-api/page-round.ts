@@ -69,7 +69,9 @@ export function installReviewPageRound(globals: PageRoundGlobals, close: (closur
     if (!command || (init?.method ?? "GET").toUpperCase() !== "POST") return fetch(input, init);
     const sent = withRound(command, String(input), init, loaded);
     const answer = fetch(sent.url, sent.init);
-    if (command !== "feedback") {
+    const approves = command === "feedback" && typeof sent.init?.body === "string"
+      && parseObject(sent.init.body)?.approved === true;
+    if (command !== "feedback" || approves) {
       ending = answer.then((response) => response.ok, () => false);
       ending.then((ended) => {
         if (ended) endedHere = true;

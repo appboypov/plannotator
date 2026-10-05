@@ -182,8 +182,8 @@ describe("review service", () => {
     await start();
     const health = await fetch(`${service!.url}/plannotator/health`);
     expect(health.status).toBe(200);
-    expect(await health.json()).toEqual({ ok: true, app: "plannotator", version: "test", api: { major: 1, minor: 1 } });
-    expect(await (await fetch(`${service!.url}/api/review/version`)).json()).toEqual({ major: 1, minor: 1 });
+    expect(await health.json()).toEqual({ ok: true, app: "plannotator", version: "test", api: { major: 1, minor: 2 } });
+    expect(await (await fetch(`${service!.url}/api/review/version`)).json()).toEqual({ major: 1, minor: 2 });
   });
 
   test("names the LaunchAgent in health when launchd runs it", async () => {
