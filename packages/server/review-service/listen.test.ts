@@ -32,6 +32,8 @@ async function start(options: { heartbeatMs?: number } = {}): Promise<ReviewServ
     reviewsDir,
     version: "test",
     heartbeatMs: options.heartbeatMs,
+    multicaProfile: "scratch",
+    multicaHome: dir,
     log: () => {},
     startPage: async (review) => {
       const page = await startAnnotateServer({
@@ -358,6 +360,31 @@ describe("Remarks wait for a listener", () => {
 });
 
 describe("One listener holds each Review", () => {
+  test("linked Reviews have no live delivery, replay or hand-over, including a pre-link Remark", async () => {
+    await start();
+    const review = await openReview("linked.md");
+    await sendFeedback(review.link, [COMMENT]);
+    await openFile(join(dir, "linked.md"), { issue: { id: "WORK-1", workspace_id: "W" } });
+    const unlinked = await openReview("unlinked.md");
+    const chat = await listen("chat");
+    expect(await subscribe(chat, "all")).toEqual([{ type: "subscribed", reviews: "all" }]);
+    const agent = await listen("agent");
+    expect(await subscribe(agent, [review.review_id])).toEqual([{ type: "subscribed", reviews: [review.review_id] }]);
+    const chatFrom = chat.messages.length, agentFrom = agent.messages.length;
+    await sendFeedback(review.link, [DELETION]);
+    await post(`${review.link}api/approve`, { round: 1, feedback: "ship" });
+    expect(await typesFrom(agent, agentFrom)).toEqual([]);
+    expect(await typesFrom(chat, chatFrom)).toEqual([]);
+    expect((await list()).reviews.find((row) => row.review_id === review.review_id)?.listeners).toEqual([]);
+    agent.socket.close();
+    await agent.closed;
+    // A subscription response is a barrier after the hand-over and its replay.
+    expect(await subscribe(chat, "all")).toEqual([{ type: "subscribed", reviews: "all" }]);
+    const delivered = chat.until("feedback_item");
+    await sendFeedback(unlinked.link, [COMMENT]);
+    expect((await delivered).at(-1)).toMatchObject({ review_id: unlinked.review_id, text: "Say why." });
+  });
+
   test("a listener that names the Review comes before one subscribed to all, also for an Approve", async () => {
     await start();
     const review = await openReview("plan.md");

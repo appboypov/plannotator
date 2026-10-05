@@ -120,7 +120,7 @@ export async function startReviewService(options: ReviewServiceOptions): Promise
     log,
     (reviewId) => store.get(reviewId)?.issue ?? null,
   );
-  const listeners = new ReviewListeners(records, log, options.heartbeatMs);
+  const listeners = new ReviewListeners(records, log, options.heartbeatMs, (id) => !!store.get(id)?.issue);
   const pages = new ReviewPages(options.startPage);
   const pageRounds = new PageRounds();
   let origins: LinkOrigins;
