@@ -21,6 +21,7 @@ test("remarks quote each line, neutralize mentions and fence backticks in anchor
 
 test("an empty anchor means the whole page; deletion keeps its anchor without quoting absent words", () => {
   expect(buildMulticaComment(review, { ...remark, anchor: { tag: "", selector: "", text: "" } })).toContain("- On: the whole page");
+  expect(buildMulticaComment(review, { ...remark, anchor: { tag: "global_comment", selector: "", text: "" } })).toContain("- On: the whole page\n");
   const deletion = buildMulticaComment(review, { ...remark, text: "", anchor: { tag: "deletion", selector: "block-1", text: "Remove" } });
   expect(deletion).toContain('- On: `deletion` `block-1`: "Remove"');
   expect(deletion).not.toContain("> ");

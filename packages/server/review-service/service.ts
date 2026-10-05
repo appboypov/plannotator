@@ -209,7 +209,7 @@ export async function startReviewService(options: ReviewServiceOptions): Promise
     const file = await realpath(requested);
     const reviewId = reviewIdForFile(file);
     let existing = store.get(reviewId);
-    if (existing && issue) {
+    if (existing && issue && (existing.issue?.id !== issue.id || existing.issue.workspace_id !== issue.workspace_id)) {
       existing = { ...existing, issue };
       await store.save(existing);
       await records.relink(reviewId, issue);
@@ -382,7 +382,7 @@ export async function startReviewService(options: ReviewServiceOptions): Promise
       const added = remarksFromFeedback(body, current, new Date().toISOString());
       if (added.length > 0) {
         await records.addRemarks(current.review_id, added);
-        poster.wake(current.review_id);
+        if (current.issue) poster.wake(current.review_id);
         log(`stored ${added.length} Remark(s) for Review ${current.review_id} round ${current.round}`);
         await listeners.remarksStored(current.review_id, added);
       }

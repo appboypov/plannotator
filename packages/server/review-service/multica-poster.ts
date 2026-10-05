@@ -32,9 +32,12 @@ export function buildMulticaComment(review: { file: string; link: string }, reco
   }
   const quote = record.text
     ? `${withoutMentions(record.text).split(/\r?\n/).map((line) => `> ${line}`).join("\n")}\n\n` : "";
+  // A remark with no block and no excerpt (a general comment) is about the whole page.
   const { tag, selector, text } = record.anchor;
-  const anchor = tag || selector || text
-    ? `${codeSpan(tag)} ${codeSpan(selector)}: "${withoutMentions(text).replace(/\s+/g, " ").trim()}"`
+  const excerpt = withoutMentions(text).replace(/\s+/g, " ").trim();
+  const place = [tag, selector].filter((part) => part.trim()).map(codeSpan).join(" ");
+  const anchor = selector.trim() || excerpt
+    ? [place, excerpt && `"${excerpt}"`].filter(Boolean).join(": ")
     : "the whole page";
   return `**Remark** on ${link}, round ${record.round}:\n\n${quote}- Item: ${id}\n- On: ${anchor}\n- Review: ${reviewId}\n\nAnswer with \`plannotator_reply\` on Review ${reviewId} with answers [${id}].`;
 }
@@ -150,9 +153,10 @@ export class MulticaPoster {
         await records.markPosted(record.id, comment.id, new Date().toISOString(), record.multica);
         lane.delay = FIRST_RETRY_MS;
         log(`multica posted review=${encodeURIComponent(reviewId)} id=${encodeURIComponent(record.id)} kind=${kind} status=${status}`);
-      } catch {
+      } catch (error) {
         if (this.closed) return;
-        log(`multica pending review=${encodeURIComponent(reviewId)} id=${encodeURIComponent(record.id)} kind=${kind} status=${status}`);
+        const cause = error instanceof Error ? (error as NodeJS.ErrnoException).code ?? error.name : "unknown";
+        log(`multica pending review=${encodeURIComponent(reviewId)} id=${encodeURIComponent(record.id)} kind=${kind} status=${status} cause=${encodeURIComponent(cause)}`);
         if (generation !== lane.relinkGeneration) continue;
         this.retryLater(reviewId, lane);
         return;
