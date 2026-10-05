@@ -65,12 +65,12 @@ The service SHALL serve each Review's page at `/plannotator/session/<review_id>/
 - **THEN** the answer is the plan page's HTML and the list shows the Review's `last_page_open` as that time
 
 ### Requirement: The service answers health and version
-`GET /plannotator/health` SHALL answer HTTP 200 `{ "ok": true, "app": "plannotator", "version": <build version>, "api": { "major": 1, "minor": 1 } }` while the service runs, adding `"service": { "label": <LaunchAgent label> }` when `PLANNOTATOR_SERVICE_LABEL` names the LaunchAgent that runs it, and `GET /api/review/version` SHALL answer `{ "major": 1, "minor": 1 }`. Every route SHALL apply the contract's Host and Origin rule (HTTP 403 `forbidden`).
+`GET /plannotator/health` SHALL answer HTTP 200 `{ "ok": true, "app": "plannotator", "version": <build version>, "api": { "major": 1, "minor": 3 } }` while the service runs, adding `"service": { "label": <LaunchAgent label> }` when `PLANNOTATOR_SERVICE_LABEL` names the LaunchAgent that runs it, and `GET /api/review/version` SHALL answer `{ "major": 1, "minor": 3 }`. Every route SHALL apply the contract's Host and Origin rule (HTTP 403 `forbidden`).
 
 #### Scenario: Health answers while the service runs
 - **GIVEN** `plannotator serve` runs on a dev port
 - **WHEN** a client sends `GET /plannotator/health`
-- **THEN** the answer is HTTP 200 with `ok` true and API major 1 and minor 1
+- **THEN** the answer is HTTP 200 with `ok` true and API major 1 and minor 3
 
 #### Scenario: Health names the LaunchAgent
 - **GIVEN** launchd runs the service as `nl.de-appspecialist.plannotator`
