@@ -1,8 +1,7 @@
 /**
  * `plannotator serve` (fork-owned): runs the review service until the process is
- * stopped. Each Review's page is upstream's annotate server with the plan editor
- * page, started for its document the way `plannotator annotate <file> --gate` starts
- * it, minus the browser, the session registry and the blocking decision.
+ * stopped. Each Review's page is upstream's annotate or PR code review server,
+ * started for its subject with no browser, session registry or blocking decision.
  */
 import { mkdir } from "node:fs/promises";
 import { dirname } from "node:path";

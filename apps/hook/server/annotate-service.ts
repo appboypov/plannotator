@@ -37,7 +37,7 @@ import type { AnnotateOutcome } from "./strict-annotate-result";
 export type ServiceAnnotateResult = { ok: true; outcome: AnnotateOutcome; annotations?: readonly Remark[] } | { ok: false; error: string };
 
 export interface ServiceAnnotateOptions {
-  /** The document's absolute path. */
+  /** The document's absolute path or PR/MR URL. */
   file: string;
   /** The service's port on 127.0.0.1 (`PLANNOTATOR_SERVICE_PORT`, else 4397). */
   port: number;

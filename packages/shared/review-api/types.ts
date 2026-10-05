@@ -13,7 +13,7 @@
 // Identifiers and closed sets
 // ---------------------------------------------------------------------------
 
-/** A Review's id: 16 lowercase hex characters, the same for the same canonical file. */
+/** A Review's id: 16 lowercase hex characters, the same for the same canonical subject. */
 export type ReviewId = string;
 
 /** A Remark's id: `fi_` plus 24 lowercase hex characters, unique across Reviews. */
@@ -94,9 +94,9 @@ export type Round = {
   state: ReviewState;
 };
 
-/** Where on the document a Remark sits. Each field is `""` when the page sent none. */
+/** Where on the document or code diff a Remark sits. Each field is `""` when the page sent none. */
 export type RemarkAnchor = {
-  /** The annotated block's id on the page, `""` for a global comment. */
+  /** The annotated block id or file/line selector, `""` for a global comment. */
   selector: string;
   /** The annotation kind, lowercase: `comment`, `deletion` or `global_comment`. */
   tag: string;
@@ -155,10 +155,10 @@ export type ReviewRepliesResponse = {
   replies: Reply[];
 };
 
-/** A Review: one document's lasting link, its current Round and who listens. */
+/** A Review: one document or PR's lasting link, its current Round and who listens. */
 export type Review = Round & {
   link: string;
-  /** The document's canonical absolute path. */
+  /** The canonical absolute file path or PR/MR URL. */
   file: string;
   visibility: Visibility;
   round_opened_at: IsoTime | null;
@@ -177,7 +177,7 @@ export type Review = Round & {
 
 /** `POST /api/review/v1/reviews`. */
 export type OpenReviewRequest = {
-  /** An absolute path to an existing file on this Mac. */
+  /** An absolute path to an existing file on this Mac or a supported PR/MR URL. */
   file: string;
   /** Reopen a Review the reviewer finished (Approve). A cancelled one reopens without it. */
   reopen?: boolean;
@@ -194,7 +194,7 @@ export type OpenReviewResponse = {
   visibility: Visibility;
 };
 
-/** `GET /api/review/v1/reviews[?file=<absolute path>]`. */
+/** `GET /api/review/v1/reviews[?file=<absolute path or PR URL>]`. */
 export type ListReviewsQuery = { file?: string };
 
 /** `GET /api/review/v1/reviews` on HTTP 200, sorted by `file`. */

@@ -68,6 +68,18 @@ async function listen(review: OpenReviewResponse) {
   return { frames, socket, finishes };
 }
 
+test("GitLab and Bitbucket URL suffixes use their provider number and canonical subject", async () => {
+  for (const [url, canonical] of [
+    ["https://gitlab.example.com/group/sub/project/-/merge_requests/42/diffs", "https://gitlab.example.com/group/sub/project/-/merge_requests/42"],
+    ["https://bitbucket.org/workspace/repo/pull-requests/7/diff", "https://bitbucket.org/workspace/repo/pull-requests/7"],
+  ]) {
+    const review = await open(url);
+    expect(review.review_id).toBe(reviewIdForFile(canonical!));
+    const listed = await (await fetch(`${service.url}/api/review/v1/reviews?file=${encodeURIComponent(url!)}`)).json();
+    expect(listed.reviews[0]).toMatchObject({ review_id: review.review_id, file: canonical });
+  }
+});
+
 test("open and filtered list canonicalize PR URLs without starting a page and survive restart", async () => {
   const first = await open(`${PR}/files`);
   expect(first.review_id).toBe(reviewIdForFile(PR));

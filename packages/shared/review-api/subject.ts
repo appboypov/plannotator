@@ -7,7 +7,7 @@ export function canonicalPRSubject(value: string): string | undefined {
   if (!ref) return undefined;
   switch (ref.platform) {
     case "github": return `https://${ref.host.toLowerCase()}/${ref.owner}/${ref.repo}/pull/${ref.number}`;
-    case "gitlab": return `https://${ref.host.toLowerCase()}/${ref.projectPath}/-/merge_requests/${ref.id}`;
+    case "gitlab": return `https://${ref.host.toLowerCase()}/${ref.projectPath}/-/merge_requests/${ref.iid}`;
     case "bitbucket": return `https://bitbucket.org/${ref.workspace}/${ref.repo}/pull-requests/${ref.number}`;
   }
 }

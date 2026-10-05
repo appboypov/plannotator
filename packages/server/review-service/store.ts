@@ -15,7 +15,7 @@ export type StoredReview = Pick<
 
 const STATES: readonly string[] = ["open", "finished", "cancelled"];
 
-/** A Review's id: the first 16 hex characters of the SHA-256 of its canonical absolute path. */
+/** A Review's id: the first 16 hex characters of the SHA-256 of its canonical subject. */
 export function reviewIdForFile(canonicalFile: string): ReviewId {
   return createHash("sha256").update(canonicalFile).digest("hex").slice(0, 16);
 }
