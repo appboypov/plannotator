@@ -1,7 +1,7 @@
 schema: intent-driven
 created: 2026-10-05
 build:
-  status: "in-progress"
+  status: "built"
   type: "feature"
   ticket: "WORK-167"
   intent: "/Users/codaveto/Repos/Ventures/madspec/intents/persona-agents-in-multica"
