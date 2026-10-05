@@ -102,9 +102,9 @@ export function remarksFromFeedback(
       const selector = fileScope || typeof start !== "number"
         ? filePath
         : `${filePath}:${start}${typeof end === "number" && end !== start ? `-${end}` : ""}`;
-      const suggestion = text(field(annotation, "suggestedCode"));
+      const suggestion = field(annotation, "suggestedCode");
       const words = text(field(annotation, "text"));
-      return remark(suggestion ? `${words}\n\n\`\`\`\n${suggestion}\n\`\`\`` : words, {
+      return remark(typeof suggestion === "string" ? `${words}\n\n\`\`\`\n${suggestion}\n\`\`\`` : words, {
         selector,
         tag: text(field(annotation, "type")).toLowerCase(),
         text: text(field(annotation, "originalCode") ?? field(annotation, "selectedText") ?? field(annotation, "tokenText")),

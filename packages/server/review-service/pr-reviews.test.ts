@@ -113,6 +113,14 @@ test("code annotation mapping preserves ranges, file scope, excerpt precedence a
   expect(rows.every((row) => row.feedback === "whole feedback" && row.round === 2)).toBe(true);
 });
 
+test("an empty code suggestion preserves the removal as a fenced block", () => {
+  const [remark] = remarksFromFeedback({ annotations: [
+    { filePath: "a.ts", lineStart: 1, type: "SUGGESTION", text: "Remove this", suggestedCode: "", originalCode: "obsolete()" },
+  ] }, { review_id: "0123456789abcdef", round: 1 }, "2026-10-05T10:00:00.000Z");
+  expect(remark!.text).toBe("Remove this\n\n```\n\n```");
+  expect(remark!.anchor).toEqual({ selector: "a.ts:1", tag: "suggestion", text: "obsolete()" });
+});
+
 test("PR feedback emits Remarks; Approve and Close emit Finish, refuse ended and stale Rounds, and clear drafts", async () => {
   const review = await open();
   const { socket, frames, finishes } = await listen(review);
