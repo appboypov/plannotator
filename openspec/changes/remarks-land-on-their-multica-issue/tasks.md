@@ -1,0 +1,21 @@
+## 1. The link
+
+- [ ] 1.1 `packages/shared/review-api/`: `MulticaIssue` type; optional `issue` on the open request, `issue` (object or null) on the open answer and on `Review`; `parseOpenReviewRequest` takes `issue` (both strings trimmed and nonblank, else 400 `issue requires nonempty id and workspace_id strings`); `API_VERSION` minor 3. Verify: `packages/shared/review-api/parse.test.ts` cases for a valid, an incomplete and a blank `issue`.
+- [ ] 1.2 `packages/server/review-service/settings.ts`: `PLANNOTATOR_MULTICA_PROFILE` read into the service settings (unset or blank = none). `store.ts`: `StoredReview.issue` (a `review.json` without it reads as null). `service.ts` open: refuses `issue` without the setting with 400 `PLANNOTATOR_MULTICA_PROFILE is required to link an issue` before any change, keeps the stored issue without `issue`, replaces it with one, returns `issue` in the answer; the list rows carry `issue`. Verify: `service.test.ts` scenarios of the `review-api` delta (link, keep, replace, null, refused without the setting, incomplete refused, version 1.3).
+
+## 2. Delivery state and poster
+
+- [ ] 2.1 `records.ts`: optional `multica` delivery state on `StoredRemark` and `StoredNotice` (parsed and persisted); Remarks and Approve or Close notices of a linked Review are stored with `status: "pending"` and the Review's link in the same write, a Cancel without; `relink(reviewId, issue)` rewrites pending destinations and enrolls open Remarks and pending Approve or Close notices without state, in one write; `markPosted(id, commentId, at)` sets `posted` and acknowledges a notice in one write; `pendingDeliveries(reviewId)` in store order. Verify: a records test for a linked store, a Cancel, a relink with a pre-link open Remark and an answered one, and a reload from disk.
+- [ ] 2.2 `multica-poster.ts`: the comment builder (Remark, Approve with and without notes, Close) as the design gives it, `mention://` written `mention:\/\/`, code spans safe for backticks, the whole page for an empty anchor. Verify: unit tests with a remark holding a mention link, backticks and several lines, one with an empty anchor, an Approve with notes and a Close.
+- [ ] 2.3 `multica-poster.ts`: the poster: reads the profile at each attempt (`server_url`, `token`), posts per Review in store order with `X-Workspace-ID`, marks posted with `comment_id` and `posted_at`, retries with a doubling wait from 1 s to 5 min per Review, scans pending on start, wakes on new records and relinks, stops cleanly, logs ids, kinds and status only. Verify: tests against a local fake Multica HTTP server and a scratch profile: order of three Remarks, refused first post then retry, restart with pending, relink frees a stuck record, Approve acknowledged, log holds no remark text or token.
+- [ ] 2.4 `service.ts`: start the poster with the service and stop it on stop; wake it after Remarks and notices are stored and after an open with `issue`. Verify: a `service.test.ts` scenario: a linked Review gets a page Send feedback with two annotations, then Approve, and the fake Multica server receives three comments in order; a Cancel posts none.
+
+## 3. Listeners
+
+- [ ] 3.1 `listen.ts`: `ReviewListeners` takes a linked predicate; a linked Review has an empty line, so no live delivery, replay or hand-over, and `subscribers` is `[]`. Verify: `listen.test.ts`: a session subscribed to all and one naming the Review receive nothing of a linked Review, an unlinked Review still delivers, and a pre-link open Remark is not replayed once the Review is linked.
+
+## 4. Service and docs
+
+- [ ] 4.1 `apps/hook/server/launch-agent.ts`: the plan sets `PLANNOTATOR_MULTICA_PROFILE=skuddy` and carries the installing shell's value. Verify: the launch-agent plan test reads the whole environment: the profile name and no token.
+- [ ] 4.2 `docs/review-api.md` (minor 3, the open's `issue`, its refusals, the list's `issue`, "Comments on the Multica issue", linked Reviews and listeners), `docs/invariants.md` (delivery state, poster order and retry, listen exclusion), `fork/README.md` (the setting). Verify: read through against the specs.
+- [ ] 4.3 The fork check passes (`bun fork/ci-check.ts`, through Crabbox or locally) and `openspec validate remarks-land-on-their-multica-issue --type change --strict` passes.
