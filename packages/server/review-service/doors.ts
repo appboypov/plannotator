@@ -23,7 +23,7 @@ import { createServer, type IncomingMessage, type ServerResponse } from "node:ht
 import type { Socket } from "node:net";
 import { basename } from "node:path";
 import type { ReviewId, Visibility } from "@plannotator/shared/review-api";
-import { matchDoorRequest } from "./door-manifest.ts";
+import { matchDoorRequest, PR_DOOR_READ_ROUTES } from "./door-manifest.ts";
 
 /** Where a door binds and the one address it accepts. */
 export type DoorListen = { host: string; port: number; peer: string };
@@ -160,7 +160,7 @@ export function startDoor(options: DoorOptions): Door {
       return;
     }
     if (method === "GET" && match.path === "/api/plan" && answer.ok) answer = await withoutLocalPaths(answer);
-    if (method === "GET" && (match.path === "/api/diff" || match.path === "/api/diff/fresh") && answer.ok) {
+    if (method === "GET" && PR_DOOR_READ_ROUTES[match.path]?.stripLocalPaths && answer.ok) {
       answer = await withoutReviewLocalPaths(answer);
     }
     await send(res, answer, method);
@@ -320,6 +320,7 @@ async function withoutReviewLocalPaths(answer: Response): Promise<Response> {
   delete data.gitContext;
   delete data.repoInfo;
   delete data.aiReviewContext;
+  delete data.platformUser;
   data.aiEnabled = false;
   if (data.serverConfig && typeof data.serverConfig === "object") Reflect.deleteProperty(data.serverConfig, "gitUser");
   const headers = new Headers(answer.headers);

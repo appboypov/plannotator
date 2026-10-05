@@ -95,18 +95,20 @@ export function remarksFromFeedback(
   }
   return annotations.map((annotation: unknown) => {
     const filePath = field(annotation, "filePath");
-    if (typeof filePath === "string") {
+    const scope = field(annotation, "scope");
+    const general = scope === "general" || filePath === "";
+    if (typeof filePath === "string" || general) {
       const start = field(annotation, "lineStart");
       const end = field(annotation, "lineEnd");
-      const fileScope = field(annotation, "scope") === "file";
-      const selector = fileScope || typeof start !== "number"
-        ? filePath
+      const fileScope = scope === "file";
+      const selector = general ? "" : fileScope || typeof start !== "number"
+        ? text(filePath)
         : `${filePath}:${start}${typeof end === "number" && end !== start ? `-${end}` : ""}`;
       const suggestion = field(annotation, "suggestedCode");
       const words = text(field(annotation, "text"));
       return remark(typeof suggestion === "string" ? `${words}\n\n\`\`\`\n${suggestion}\n\`\`\`` : words, {
         selector,
-        tag: text(field(annotation, "type")).toLowerCase(),
+        tag: general ? "global_comment" : text(field(annotation, "type")).toLowerCase(),
         text: text(field(annotation, "originalCode") ?? field(annotation, "selectedText") ?? field(annotation, "tokenText")),
       });
     }

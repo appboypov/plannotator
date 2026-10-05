@@ -51,6 +51,7 @@ import { PAGE_ROUND_META, PAGE_ROUND_PATH } from "@plannotator/shared/review-api
 import { ReviewListeners, listenData, type ListenData } from "./listen.ts";
 import { PageRounds } from "./page-rounds.ts";
 import { startDoor, type Door, type DoorListen } from "./doors.ts";
+import { PR_DOOR_READ_ROUTES } from "./door-manifest.ts";
 import { ReviewPages, type StartReviewPage } from "./pages.ts";
 import { ReviewRecords, openRemark, recordId, remarksFromFeedback, type StoredNotice } from "./records.ts";
 import { ReviewStore, reviewIdForFile, type StoredReview } from "./store.ts";
@@ -187,7 +188,7 @@ export async function startReviewService(options: ReviewServiceOptions): Promise
     if (rest.length === 0) return Response.redirect(`${reviewPagePath(reviewId)}${url.search}`, 308);
     const path = `/${rest.join("/")}`;
     // PR read routes behind a door belong only to a PR subject, never to a local file page.
-    if (url.hostname === "door" && ["/api/diff", "/api/diff/fresh", "/api/pr-context", "/api/pr-context/stream", "/api/file-content", "/api/review-image"].includes(path)
+    if (url.hostname === "door" && Object.hasOwn(PR_DOOR_READ_ROUTES, path)
       && !canonicalPRSubject(review.file)) return error(404, "not found");
     const command = method === "POST" ? PAGE_COMMANDS[path] : undefined;
     if (command) return pageCommand(command, review, request, url);
@@ -354,7 +355,7 @@ export async function startReviewService(options: ReviewServiceOptions): Promise
     const refused = roundRefusal(arrived, round.value);
     if (refused) return Response.json(refused satisfies RoundRefusal, { status: 409 });
 
-    const generation = command === "exit" ? url.searchParams.get("generation") : field(body, "draftGeneration");
+    const generation = command === "exit" ? url.searchParams.get("draftGeneration") : field(body, "draftGeneration");
     const search = typeof generation === "number" || typeof generation === "string" ? `?generation=${generation}` : "";
     const cleared = await page(new Request(request.url, { method: "DELETE" }), arrived, DRAFT_PATH, search);
     if (!cleared.ok) {

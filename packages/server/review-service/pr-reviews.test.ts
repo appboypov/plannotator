@@ -31,7 +31,7 @@ beforeEach(async () => {
         const url = new URL(request.url);
         if (request.method === "DELETE") cleared.push(url.pathname + url.search);
         if (url.pathname === "/") return new Response("<html><head></head><body>Code review</body></html>", { headers: { "content-type": "text/html" } });
-        return Response.json({ rawPatch: `diff for ${review.file}`, agentCwd: "/private/checkout", repoInfo: {}, gitContext: { cwd: "/private/checkout" }, serverConfig: { gitUser: "private" } });
+        return Response.json({ rawPatch: `diff for ${review.file}`, platformUser: "reviewer-login", agentCwd: "/private/checkout", repoInfo: {}, gitContext: { cwd: "/private/checkout" }, serverConfig: { gitUser: "private", theme: "dark" } });
       } });
       return { port: page.port!, stop: () => page.stop(true) };
     },
@@ -121,6 +121,17 @@ test("an empty code suggestion preserves the removal as a fenced block", () => {
   expect(remark!.anchor).toEqual({ selector: "a.ts:1", tag: "suggestion", text: "obsolete()" });
 });
 
+test("general code annotations map to global Remarks without a line selector", () => {
+  const remarks = remarksFromFeedback({ feedback: "Whole review", annotations: [
+    { filePath: "src/a.ts", lineStart: 4, scope: "general", type: "COMMENT", text: "Review-wide note" },
+    { filePath: "", lineStart: 0, type: "COMMENT", text: "Unanchored note" },
+  ] }, { review_id: "0123456789abcdef", round: 1 }, "2026-10-05T10:00:00.000Z");
+  expect(remarks.map(({ text, anchor, feedback }) => ({ text, anchor, feedback }))).toEqual([
+    { text: "Review-wide note", anchor: { selector: "", tag: "global_comment", text: "" }, feedback: "Whole review" },
+    { text: "Unanchored note", anchor: { selector: "", tag: "global_comment", text: "" }, feedback: "Whole review" },
+  ]);
+});
+
 test("PR feedback emits Remarks; Approve and Close emit Finish, refuse ended and stale Rounds, and clear drafts", async () => {
   const review = await open();
   const { socket, frames, finishes } = await listen(review);
@@ -136,13 +147,31 @@ test("PR feedback emits Remarks; Approve and Close emit Finish, refuse ended and
     expect(frames.find((f) => f.type === "finish")).toMatchObject({ round: 1, notes: "Ship" });
     expect(cleared[0]).toBe("/api/draft?generation=7");
     expect((await post(`${review.link}api/feedback`, { round: 1, feedback: "late" })).status).toBe(409);
-    const reopened = await open(PR, { reopen: true });
+    const reopened = await open(PR, { reopen: true, visibility: "public" });
     expect(reopened.round).toBe(2);
     expect((await post(`${review.link}api/feedback`, { round: 1, feedback: "stale" })).status).toBe(409);
-    expect((await post(`${review.link}api/exit?round=2&generation=8`)).status).toBe(200);
+    const doorLink = `http://127.0.0.1:${service.doors[0]!.port()}/plannotator/session/${review.review_id}/`;
+    expect((await post(`${doorLink}api/exit?draftGeneration=8&round=2`)).status).toBe(200);
     await finishes[1]!.promise;
     expect(frames.filter((f) => f.type === "finish")[1]).toMatchObject({ round: 2, dismissed: true, notes: "" });
     expect(starts).toBe(2);
+    expect(cleared.at(-1)).toBe("/api/draft?generation=8");
+  } finally { socket.close(); }
+});
+
+test("document Close through a door clears the page's draft generation and emits dismissed Finish", async () => {
+  const file = join(dir, "plan.md");
+  await writeFile(file, "# Plan");
+  const review = await open(file, { visibility: "public" });
+  const { socket, frames, finishes } = await listen(review);
+  try {
+    const doorLink = `http://127.0.0.1:${service.doors[0]!.port()}/plannotator/session/${review.review_id}/`;
+    expect((await post(`${doorLink}api/exit?draftGeneration=11&round=1`)).status).toBe(200);
+    await finishes[0]!.promise;
+    expect(frames.find((frame) => frame.type === "finish")).toMatchObject({ review_id: review.review_id, round: 1, dismissed: true, notes: "" });
+    expect(cleared).toEqual(["/api/draft?generation=11"]);
+    expect((await post(`${doorLink}api/exit?draftGeneration=11&round=1`)).status).toBe(409);
+    expect(cleared).toEqual(["/api/draft?generation=11"]);
   } finally { socket.close(); }
 });
 
@@ -156,9 +185,13 @@ test("failed PR page startup retries the next request", async () => {
 test("PR door reads strip local paths, refuse external writes and stop at visibility change", async () => {
   const review = await open(PR, { visibility: "public" });
   const link = `http://127.0.0.1:${service.doors[0]!.port()}/plannotator/session/${review.review_id}/`;
-  const diff = await (await fetch(`${link}api/diff`)).json();
-  expect(diff.rawPatch).toContain(PR);
-  expect(JSON.stringify(diff)).not.toContain("private");
+  for (const route of ["api/diff", "api/diff/fresh?snapshot=x"]) {
+    const diff = await (await fetch(`${link}${route}`)).json();
+    expect(diff.rawPatch).toContain(PR);
+    expect(diff.platformUser).toBeUndefined();
+    expect(diff.serverConfig).toEqual({ theme: "dark" });
+    expect(JSON.stringify(diff)).not.toContain("private");
+  }
   for (const route of ["pr-action", "pr-viewed", "git-add", "open-in", "agents", "config", "upload", "code-nav/resolve", "pr-switch"]) {
     expect((await post(`${link}api/${route}`, {})).status).toBe(404);
   }

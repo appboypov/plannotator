@@ -1,6 +1,7 @@
 import { canonicalPRSubject } from "@plannotator/shared/review-api/subject";
 import type { Origin } from "@plannotator/shared/agents";
 import { handleReviewServerReady } from "@plannotator/server/review";
+import { isRemoteSession } from "@plannotator/server/annotate";
 import { resolveServicePort } from "@plannotator/server/review-service";
 import { annotateThroughService, type ServiceAnnotateOptions } from "./annotate-service";
 import { buildReviewOutput, type ReviewOutput } from "./review-output";
@@ -38,7 +39,7 @@ export async function runServiceReviewCommand(options: { file: string; json: boo
     origin: options.origin,
     onOpened: (review) => {
       process.stderr.write(`\nPlannotator review, round ${review.round}:\n${review.link}\n`);
-      handleReviewServerReady(review.link, false, port.value);
+      handleReviewServerReady(review.link, isRemoteSession(), port.value);
     },
     log: (line) => console.error(`[plannotator] ${line}`),
   });

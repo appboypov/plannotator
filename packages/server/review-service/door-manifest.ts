@@ -15,6 +15,16 @@ export type DoorMatch = { kind: "health" } | { kind: "page"; reviewId: ReviewId;
 /** A path a door passes: its methods, and the query parameters it may carry (`"any"` for the page's HTML). */
 type DoorRoute = { methods: readonly string[]; query: readonly string[] | "any" };
 
+/** PR-only door reads and the payloads whose host identity fields are stripped. */
+export const PR_DOOR_READ_ROUTES: Record<string, DoorRoute & { stripLocalPaths?: true }> = {
+  "/api/diff": { methods: ["GET"], query: [], stripLocalPaths: true },
+  "/api/diff/fresh": { methods: ["GET"], query: ["snapshot"], stripLocalPaths: true },
+  "/api/pr-context": { methods: ["GET"], query: [] },
+  "/api/pr-context/stream": { methods: ["GET"], query: [] },
+  "/api/file-content": { methods: ["GET"], query: ["path", "oldPath", "snapshot"] },
+  "/api/review-image": { methods: ["GET"], query: ["path", "side", "snapshot"] },
+};
+
 /**
  * The paths a door passes under a Review page: its HTML, the calls the page makes, its
  * streams. Query parameters are listed per path because upstream routes read other
@@ -29,16 +39,11 @@ const DOOR_PAGE_ROUTES: Record<string, DoorRoute> = {
   "/api/plan": { methods: ["GET"], query: [] },
   "/api/plan/version": { methods: ["GET"], query: ["v"] },
   "/api/plan/versions": { methods: ["GET"], query: [] },
-  "/api/diff": { methods: ["GET"], query: [] },
-  "/api/diff/fresh": { methods: ["GET"], query: ["snapshot"] },
-  "/api/pr-context": { methods: ["GET"], query: [] },
-  "/api/pr-context/stream": { methods: ["GET"], query: [] },
-  "/api/file-content": { methods: ["GET"], query: ["path", "oldPath", "snapshot"] },
-  "/api/review-image": { methods: ["GET"], query: ["path", "side", "snapshot"] },
+  ...PR_DOOR_READ_ROUTES,
   "/api/draft": { methods: ["GET", "POST", "DELETE"], query: ["generation"] },
   "/api/feedback": { methods: ["POST"], query: [] },
   "/api/approve": { methods: ["POST"], query: [] },
-  "/api/exit": { methods: ["POST"], query: ["round", "generation"] },
+  "/api/exit": { methods: ["POST"], query: ["round", "draftGeneration"] },
   [`/${PAGE_ROUND_PATH}`]: { methods: ["GET"], query: [] },
   [`/${PAGE_REPLIES_PATH}`]: { methods: ["GET"], query: [] },
   [ANNOTATE_CLIENT_LEASE_STREAM_PATH]: { methods: ["GET"], query: [] },
