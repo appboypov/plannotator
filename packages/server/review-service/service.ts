@@ -212,7 +212,9 @@ export async function startReviewService(options: ReviewServiceOptions): Promise
     if (existing && issue && (existing.issue?.id !== issue.id || existing.issue.workspace_id !== issue.workspace_id)) {
       existing = { ...existing, issue };
       await store.save(existing);
-      await records.relink(reviewId, issue);
+      // The Finish to bind is that of the Round the Review is in after this open: a reopen starts the next one.
+      const finishedStays = existing.state === "finished" && !reopen;
+      await records.relink(reviewId, issue, existing.state === "open" || finishedStays ? existing.round : existing.round + 1);
       poster.wake(reviewId, true);
     }
     // Approve stands until reopening is requested; linking may still update its destination.
@@ -246,7 +248,7 @@ export async function startReviewService(options: ReviewServiceOptions): Promise
         };
     if (!existing || nextRound || review.visibility !== existing.visibility) await store.save(review);
     if (!existing && issue) {
-      await records.relink(reviewId, issue);
+      await records.relink(reviewId, issue, review.round);
       poster.wake(reviewId, true);
     }
     if (!existing) log(`opened Review ${reviewId} for ${file}`);

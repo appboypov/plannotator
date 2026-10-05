@@ -210,19 +210,23 @@ export class ReviewRecords {
       .sort((a, b) => a.at.localeCompare(b.at) || Number("type" in a) - Number("type" in b));
   }
 
-  /** Move only pending deliveries; enroll only still-open reviewer events. One write per changed file. */
-  async relink(reviewId: ReviewId, issue: MulticaIssue): Promise<void> {
+  /**
+   * Move only pending deliveries; enroll open Remarks no listener received and the Finish of [round],
+   * the Round the Review is in after the open. One write per changed file.
+   */
+  async relink(reviewId: ReviewId, issue: MulticaIssue, round: number): Promise<void> {
     const delivery = (): MulticaDelivery => ({ issue: issue.id, workspace_id: issue.workspace_id, status: "pending" });
     const changed = new Set<RecordFile>();
     for (const remark of this.remarks.get(reviewId) ?? []) {
-      if (remark.multica?.status === "pending" || (!remark.multica && remark.status === "open")) {
+      if (remark.multica?.status === "pending" ||
+          (!remark.multica && remark.status === "open" && remark.delivered_to.length === 0)) {
         remark.multica = delivery();
         changed.add(REMARKS_FILE);
       }
     }
     for (const notice of this.notices.get(reviewId) ?? []) {
-      if (notice.type === "finish" &&
-          (notice.multica?.status === "pending" || (!notice.multica && notice.status === "pending"))) {
+      if (notice.type === "finish" && (notice.multica?.status === "pending" ||
+          (!notice.multica && notice.status === "pending" && notice.round === round))) {
         notice.multica = delivery();
         changed.add(NOTICES_FILE);
       }
@@ -230,23 +234,27 @@ export class ReviewRecords {
     await Promise.all([...changed].map((file) => this.write(reviewId, file)));
   }
 
-  /** Persist successful delivery and notice acknowledgement together. Guard an in-flight relink. */
-  async markPosted(id: string, commentId: string, at: IsoTime, destination?: MulticaDelivery): Promise<void> {
+  /**
+   * Persist successful delivery and notice acknowledgement together. False when the record is no
+   * longer pending for [destination]: a relink moved it during the post.
+   */
+  async markPosted(id: string, commentId: string | null, at: IsoTime, destination?: MulticaDelivery): Promise<boolean> {
     for (const reviewId of this.reviewIds()) {
       const record = [...(this.remarks.get(reviewId) ?? []), ...(this.notices.get(reviewId) ?? [])]
         .find((entry) => entry.id === id);
       if (!record) continue;
       const current = record.multica;
       if (current?.status !== "pending" || (destination &&
-          (current.issue !== destination.issue || current.workspace_id !== destination.workspace_id))) return;
-      record.multica = { ...current, status: "posted", comment_id: commentId, posted_at: at };
+          (current.issue !== destination.issue || current.workspace_id !== destination.workspace_id))) return false;
+      record.multica = { ...current, status: "posted", ...(commentId ? { comment_id: commentId } : {}), posted_at: at };
       if ("type" in record) {
         record.status = "acknowledged";
         record.acknowledged_at = at;
       }
       await this.write(reviewId, "type" in record ? NOTICES_FILE : REMARKS_FILE);
-      return;
+      return true;
     }
+    return false;
   }
 
   /** Appends [added] to the Review's Remarks and writes them. */

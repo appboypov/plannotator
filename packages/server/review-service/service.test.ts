@@ -132,6 +132,39 @@ describe("review service", () => {
     } finally { fake.stop(true); }
   });
 
+  test("a link posts a pre-link Remark and the current Round's Approve, never an earlier Round's", async () => {
+    const comments: string[] = [];
+    const received = Promise.withResolvers<void>();
+    const fake = Bun.serve({ hostname: "127.0.0.1", port: 0, fetch: async (request) => {
+      comments.push((await request.json()).content);
+      if (comments.length === 3) received.resolve();
+      return Response.json({ id: `comment-${comments.length}` }, { status: 201 });
+    } });
+    try {
+      const profileDir = join(dir, ".multica", "profiles", "scratch");
+      mkdirSync(profileDir, { recursive: true });
+      writeFileSync(join(profileDir, "config.json"), JSON.stringify({ server_url: fake.url.origin, token: "fake-token" }));
+      await start("scratch");
+      const issue = { id: "WORK-1", workspace_id: "W" };
+      const reopened = document("reopened.md", "# Reopened\n");
+      const { link } = await (await open(reopened)).json();
+      await fetch(`${link}api/feedback`, { method: "POST", body: JSON.stringify({
+        round: 1, annotations: [{ type: "comment", blockId: "block-1", originalText: "Reopened", text: "pre-link" }] }) });
+      await fetch(`${link}api/approve`, { method: "POST", body: JSON.stringify({ round: 1, feedback: "first round" }) });
+      expect(await (await open(reopened, { issue, reopen: true })).json()).toMatchObject({ round: 2, issue });
+      await fetch(`${link}api/approve`, { method: "POST", body: JSON.stringify({ round: 2, feedback: "second round" }) });
+      const stays = document("stays.md", "# Stays\n");
+      const finished = await (await open(stays)).json();
+      await fetch(`${finished.link}api/approve`, { method: "POST", body: JSON.stringify({ round: 1, feedback: "stays finished" }) });
+      expect(await (await open(stays, { issue })).json()).toMatchObject({ status: "user-ended", round: 1, issue });
+      // A bound earlier-Round Approve would post before "second round" in its store order, so any three comments show it.
+      await received.promise;
+      await service!.stop();
+      const quoted = comments.map((content) => content.match(/> (.+)/)?.[1]).sort();
+      expect(quoted).toEqual(["pre-link", "second round", "stays finished"]);
+    } finally { fake.stop(true); }
+  });
+
   test("links, keeps, replaces and reloads an issue while old reviews remain unlinked", async () => {
     await start("scratch");
     const file = document("linked.md", "# Plan\n");
@@ -409,5 +442,11 @@ describe("service settings", () => {
     for (const origin of ["t.example", "ftp://t.example", "https://t.example/path", "https://t.example?x=1"]) {
       expect([origin, resolveServiceSettings([], { PLANNOTATOR_TEMPORARY_ORIGIN: origin }).ok]).toEqual([origin, false]);
     }
+  });
+
+  test("PLANNOTATOR_MULTICA_PROFILE names the profile, trimmed; unset or blank leaves linking off", () => {
+    expect(resolveServiceSettings([], { PLANNOTATOR_MULTICA_PROFILE: " skuddy " })).toMatchObject({ ok: true, value: { multicaProfile: "skuddy" } });
+    expect(resolveServiceSettings([], { PLANNOTATOR_MULTICA_PROFILE: "  " })).toMatchObject({ ok: true, value: { multicaProfile: null } });
+    expect(resolveServiceSettings([], {})).toMatchObject({ ok: true, value: { multicaProfile: null } });
   });
 });
