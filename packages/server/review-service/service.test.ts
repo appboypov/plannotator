@@ -165,7 +165,7 @@ describe("review service", () => {
     } finally { fake.stop(true); }
   });
 
-  test("links, keeps, replaces and reloads an issue while old reviews remain unlinked", async () => {
+  test("links, keeps, replaces and reloads an issue; a Review stored without issue lists as unlinked", async () => {
     await start("scratch");
     const file = document("linked.md", "# Plan\n");
     const issue = { id: "WORK-1", workspace_id: "W" };
@@ -173,8 +173,8 @@ describe("review service", () => {
     expect(await (await open(file)).json()).toMatchObject({ issue });
     const replacement = { id: "WORK-2", workspace_id: "W2" };
     expect(await (await open(file, { issue: replacement })).json()).toMatchObject({ issue: replacement });
-    const old = await (await open(document("old.md", "# Old\n"))).json();
-    const path = join(reviewsDir, old.review_id, "review.json");
+    const unlinked = await (await open(document("unlinked.md", "# Unlinked\n"))).json();
+    const path = join(reviewsDir, unlinked.review_id, "review.json");
     const stored = JSON.parse(readFileSync(path, "utf8"));
     delete stored.issue;
     writeFileSync(path, JSON.stringify(stored));

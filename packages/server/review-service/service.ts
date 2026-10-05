@@ -216,6 +216,8 @@ export async function startReviewService(options: ReviewServiceOptions): Promise
       const finishedStays = existing.state === "finished" && !reopen;
       await records.relink(reviewId, issue, existing.state === "open" || finishedStays ? existing.round : existing.round + 1);
       poster.wake(reviewId, true);
+      // An Approve, Close or Cancel may have landed during the writes above.
+      existing = store.get(reviewId) ?? existing;
     }
     // Approve stands until reopening is requested; linking may still update its destination.
     if (existing?.state === "finished" && !reopen) {

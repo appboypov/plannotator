@@ -64,7 +64,7 @@ The route is unversioned, so a client can read any major. A client that supports
 - `file` (string, required): an absolute path to an existing file on this Mac.
 - `reopen` (boolean, optional): reopen a Review the reviewer finished with Approve. A cancelled Review reopens without it.
 - `visibility` (`"local" | "public" | "temporary"`, optional): a new Review opens `local` when none is named; an open without it keeps an existing Review's Visibility.
-- `issue` (object, optional): `{ "id": "WORK-167", "workspace_id": "<workspace id>" }`, both strings trimmed and nonblank. An open without it keeps the stored issue; one with it replaces the issue, including on a `user-ended` answer. An old Review with no issue reads as unlinked. Requires the service setting `PLANNOTATOR_MULTICA_PROFILE`; no unlink is provided.
+- `issue` (object, optional): `{ "id": "WORK-167", "workspace_id": "<workspace id>" }`, both strings trimmed and nonblank. An open without it keeps the stored issue; one with it replaces the issue, including on a `user-ended` answer. A Review stored without `issue` reads as unlinked. Requires the service setting `PLANNOTATOR_MULTICA_PROFILE`; no unlink is provided.
 
 HTTP 200 with `OpenReviewResponse`:
 
