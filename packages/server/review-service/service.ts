@@ -78,6 +78,8 @@ export type ReviewServiceOptions = {
   temporaryPort?: number | null;
   /** Requests per visitor per minute through a door; 300 unless a test names another. */
   doorRateLimit?: number;
+  /** CLI profile for member comments on linked Reviews; absent disables linking. */
+  multicaProfile?: string | null;
 };
 
 export type ReviewService = {
@@ -196,12 +198,17 @@ export async function startReviewService(options: ReviewServiceOptions): Promise
     if (body === MALFORMED) return error(400, "malformed JSON");
     const parsed = parseOpenReviewRequest(body);
     if (!parsed.ok) return error(400, parsed.error);
-    const { file: requested, visibility, reopen } = parsed.value;
+    const { file: requested, visibility, reopen, issue } = parsed.value;
+    if (issue && !options.multicaProfile?.trim()) return error(400, ERRORS.multicaProfile);
     const found = await stat(requested).catch(() => undefined);
     if (!found?.isFile()) return error(404, `file not found: ${requested}`);
     const file = await realpath(requested);
     const reviewId = reviewIdForFile(file);
-    const existing = store.get(reviewId);
+    let existing = store.get(reviewId);
+    if (existing && issue) {
+      existing = { ...existing, issue };
+      await store.save(existing);
+    }
     // The reviewer's Approve stands until the agent asks to reopen it; nothing is written.
     if (existing?.state === "finished" && !reopen) {
       return Response.json({
@@ -210,6 +217,7 @@ export async function startReviewService(options: ReviewServiceOptions): Promise
         status: "user-ended",
         round: existing.round,
         visibility: existing.visibility,
+        issue: existing.issue,
       } satisfies OpenReviewResponse);
     }
     const now = new Date().toISOString();
@@ -224,6 +232,7 @@ export async function startReviewService(options: ReviewServiceOptions): Promise
           review_id: reviewId,
           file,
           visibility: visibility ?? "local",
+          issue: issue ?? null,
           round: 1,
           state: "open",
           round_opened_at: now,
@@ -243,6 +252,7 @@ export async function startReviewService(options: ReviewServiceOptions): Promise
       status: "opened",
       round: review.round,
       visibility: review.visibility,
+      issue: review.issue,
     } satisfies OpenReviewResponse);
   }
 

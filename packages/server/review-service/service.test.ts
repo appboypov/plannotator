@@ -32,8 +32,8 @@ const startPage: StartReviewPage = async (review) => {
   return { port: page.port, stop: page.stop };
 };
 
-async function start(): Promise<ReviewService> {
-  service = await startReviewService({ port: 0, reviewsDir, version: "test", startPage, log: () => {} });
+async function start(multicaProfile: string | null = null): Promise<ReviewService> {
+  service = await startReviewService({ port: 0, reviewsDir, version: "test", startPage, log: () => {}, multicaProfile });
   return service;
 }
 
@@ -98,6 +98,37 @@ describe("review service", () => {
 
     const again = (await (await open(plan)).json()) as OpenReviewResponse;
     expect(again).toEqual(first);
+  });
+
+  test("links, keeps, replaces and reloads an issue while old reviews remain unlinked", async () => {
+    await start("scratch");
+    const file = document("linked.md", "# Plan\n");
+    const issue = { id: "WORK-1", workspace_id: "W" };
+    expect(await (await open(file, { issue })).json()).toMatchObject({ issue });
+    expect(await (await open(file)).json()).toMatchObject({ issue });
+    const replacement = { id: "WORK-2", workspace_id: "W2" };
+    expect(await (await open(file, { issue: replacement })).json()).toMatchObject({ issue: replacement });
+    const old = await (await open(document("old.md", "# Old\n"))).json();
+    const path = join(reviewsDir, old.review_id, "review.json");
+    const stored = JSON.parse(readFileSync(path, "utf8"));
+    delete stored.issue;
+    writeFileSync(path, JSON.stringify(stored));
+    await service!.stop();
+    await start("scratch");
+    const list = await (await fetch(`${service!.url}/api/review/v1/reviews`)).json();
+    expect(list.reviews.map((review: { issue: unknown }) => review.issue)).toEqual([replacement, null]);
+  });
+
+  test("refuses links before creating or changing a Review", async () => {
+    await start(" ");
+    const file = document("plan.md", "# Plan\n");
+    expect((await open(file, { issue: { id: "WORK-1", workspace_id: "W" } })).status).toBe(400);
+    expect((await (await fetch(`${service!.url}/api/review/v1/reviews`)).json()).reviews).toEqual([]);
+    const original = await (await open(file)).json();
+    for (const issue of [{ id: "WORK-1" }, { id: "WORK-1", workspace_id: " " }, { id: "WORK-1", workspace_id: "W" }]) {
+      expect((await open(file, { issue, visibility: "public" })).status).toBe(400);
+      expect(await (await open(file)).json()).toEqual(original);
+    }
   });
 
   test("the same file through another path keeps its id", async () => {
@@ -182,8 +213,8 @@ describe("review service", () => {
     await start();
     const health = await fetch(`${service!.url}/plannotator/health`);
     expect(health.status).toBe(200);
-    expect(await health.json()).toEqual({ ok: true, app: "plannotator", version: "test", api: { major: 1, minor: 1 } });
-    expect(await (await fetch(`${service!.url}/api/review/version`)).json()).toEqual({ major: 1, minor: 1 });
+    expect(await health.json()).toMatchObject({ ok: true, app: "plannotator", version: "test", api: { major: 1, minor: 3 } });
+    expect(await (await fetch(`${service!.url}/api/review/version`)).json()).toEqual({ major: 1, minor: 3 });
   });
 
   test("names the LaunchAgent in health when launchd runs it", async () => {

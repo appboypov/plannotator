@@ -1,7 +1,7 @@
 ## 1. The link
 
 - [x] 1.1 `packages/shared/review-api/`: `MulticaIssue` type; optional `issue` on the open request, `issue` (object or null) on the open answer and on `Review`; `parseOpenReviewRequest` takes `issue` (both strings trimmed and nonblank, else 400 `issue requires nonempty id and workspace_id strings`); `API_VERSION` minor 3. Verify: `packages/shared/review-api/parse.test.ts` cases for a valid, an incomplete and a blank `issue`.
-- [ ] 1.2 `packages/server/review-service/settings.ts`: `PLANNOTATOR_MULTICA_PROFILE` read into the service settings (unset or blank = none). `store.ts`: `StoredReview.issue` (a `review.json` without it reads as null). `service.ts` open: refuses `issue` without the setting with 400 `PLANNOTATOR_MULTICA_PROFILE is required to link an issue` before any change, keeps the stored issue without `issue`, replaces it with one, returns `issue` in the answer; the list rows carry `issue`. Verify: `service.test.ts` scenarios of the `review-api` delta (link, keep, replace, null, refused without the setting, incomplete refused, version 1.3).
+- [x] 1.2 `packages/server/review-service/settings.ts`: `PLANNOTATOR_MULTICA_PROFILE` read into the service settings (unset or blank = none). `store.ts`: `StoredReview.issue` (a `review.json` without it reads as null). `service.ts` open: refuses `issue` without the setting with 400 `PLANNOTATOR_MULTICA_PROFILE is required to link an issue` before any change, keeps the stored issue without `issue`, replaces it with one, returns `issue` in the answer; the list rows carry `issue`. Verify: `service.test.ts` scenarios of the `review-api` delta (link, keep, replace, null, refused without the setting, incomplete refused, version 1.3).
 
 ## 2. Delivery state and poster
 
@@ -23,3 +23,4 @@
 ## Implementation Notes
 
 - 1.1: Added the additive issue contract and API 1.3 in `packages/shared/review-api/{types,parse,version}.ts`. `parse.test.ts` proves trimming and invalid links (16 tests pass). Baseline: `ecba51d88cc09981d835a12af7a07d4c686964d4`.
+- 1.2: `settings.ts`, `store.ts`, `service.ts` and `service.test.ts` implement issue persistence, refusal before mutation, keep/replace and old-state migration. HTTP proof through the real review service and upstream page server: 18 tests pass. An ended Review may update its issue without reopening its Round.
