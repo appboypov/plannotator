@@ -48,6 +48,7 @@ export const SERVE_USAGE = [
   `  ${PUBLIC_PEER_ENV}        The one address the public door accepts (default ${DEFAULT_PUBLIC_PEER})`,
   `  ${TEMPORARY_PORT_ENV}     Temporary door port on 127.0.0.1, loopback only (installed: 4398); unset or off opens none`,
   `  ${TEMPORARY_ORIGIN_ENV}   Origin of temporary links, the one host the temporary door answers (default ${DEFAULT_TEMPORARY_ORIGIN})`,
+  "  PLANNOTATOR_MULTICA_PROFILE  CLI profile for linked Review comments; unset disables linking",
 ].join("\n");
 
 /** What every Review's page shares with the plain annotate command. */
@@ -71,7 +72,7 @@ export async function runServeCommand(options: {
     console.error(`${settings.error}\n\n${SERVE_USAGE}`);
     process.exit(2);
   }
-  const { port, reviewsDir, publicDoor, temporaryPort, temporaryOrigin } = settings.value;
+  const { port, reviewsDir, publicDoor, temporaryPort, temporaryOrigin, multicaProfile } = settings.value;
 
   // Pages are loopback-only and pick free ports: the service is their only door,
   // whatever PLANNOTATOR_REMOTE or PLANNOTATOR_PORT the launching shell carried.
@@ -118,6 +119,7 @@ export async function runServeCommand(options: {
     publicDoor,
     temporaryPort,
     temporaryOrigin,
+    multicaProfile,
     serviceLabel: process.env[SERVICE_LABEL_ENV]?.trim() || undefined,
   });
 }

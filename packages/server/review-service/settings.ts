@@ -9,6 +9,9 @@ export const SERVICE_PORT_ENV = "PLANNOTATOR_SERVICE_PORT";
 /** Overrides the folder that holds one folder per Review (default `<data dir>/reviews`). */
 export const REVIEWS_DIR_ENV = "PLANNOTATOR_REVIEWS_DIR";
 
+/** The CLI profile whose member posts linked Review events. Never a token. */
+export const MULTICA_PROFILE_ENV = "PLANNOTATOR_MULTICA_PROFILE";
+
 /** The public door's address (default this Mac's Tailscale address, 100.111.186.85). */
 export const PUBLIC_HOST_ENV = "PLANNOTATOR_PUBLIC_HOST";
 
@@ -48,6 +51,7 @@ export type ReviewServiceSettings = {
   temporaryPort: number | null;
   /** The origin `temporary` links live on, without a trailing slash. */
   temporaryOrigin: string;
+  multicaProfile: string | null;
 };
 
 /**
@@ -104,7 +108,8 @@ export function resolveServiceSettings(
 
   return {
     ok: true,
-    value: { port: port.value, reviewsDir, publicDoor, temporaryPort: temporaryPort.value, temporaryOrigin },
+    value: { port: port.value, reviewsDir, publicDoor, temporaryPort: temporaryPort.value, temporaryOrigin,
+      multicaProfile: env[MULTICA_PROFILE_ENV]?.trim() || null },
   };
 }
 

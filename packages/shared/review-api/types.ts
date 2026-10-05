@@ -55,6 +55,9 @@ export type OpenStatus = "opened" | "user-ended";
 /** The Reviews a listener hears: every Review, including later ones, or the named ones. */
 export type Subscription = "all" | ReviewId[];
 
+/** The Multica issue whose member comments receive this Review's reviewer events. */
+export type MulticaIssue = { id: string; workspace_id: string };
+
 // ---------------------------------------------------------------------------
 // Version and health
 // ---------------------------------------------------------------------------
@@ -161,6 +164,7 @@ export type Review = Round & {
   /** The document's canonical absolute path. */
   file: string;
   visibility: Visibility;
+  issue: MulticaIssue | null;
   round_opened_at: IsoTime | null;
   /** Open Remarks across all Rounds. */
   open_item_count: number;
@@ -183,6 +187,8 @@ export type OpenReviewRequest = {
   reopen?: boolean;
   /** A new Review opens `local` when absent; an existing Review keeps its own. */
   visibility?: Visibility;
+  /** Absent keeps the stored link; present replaces it. */
+  issue?: MulticaIssue;
 };
 
 /** `POST /api/review/v1/reviews` on HTTP 200. */
@@ -192,6 +198,7 @@ export type OpenReviewResponse = {
   status: OpenStatus;
   round: number;
   visibility: Visibility;
+  issue: MulticaIssue | null;
 };
 
 /** `GET /api/review/v1/reviews[?file=<absolute path>]`. */

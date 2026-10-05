@@ -38,7 +38,7 @@ The review API lives at the site root and the page under `/plannotator/`, so the
 `GET /api/review/version` returns HTTP 200 with `ApiVersion`:
 
 ```json
-{ "major": 1, "minor": 1 }
+{ "major": 1, "minor": 3 }
 ```
 
 The route is unversioned, so a client can read any major. A client that supports a different `major` must not open, listen or write. `minor` grows with changes a client may ignore: a new field, or a server message it no longer receives (ADR 0008). The constant is `API_VERSION`.
@@ -48,7 +48,7 @@ The route is unversioned, so a client can read any major. A client that supports
 `GET /plannotator/health` returns HTTP 200 with `HealthResponse` while the service runs:
 
 ```json
-{ "ok": true, "app": "plannotator", "version": "0.27.23", "api": { "major": 1, "minor": 1 } }
+{ "ok": true, "app": "plannotator", "version": "0.27.23", "api": { "major": 1, "minor": 3 } }
 ```
 
 `version` is the fork build version, such as `0.27.23-appboypov.da228139`. When launchd runs the service (`plannotator service install`), health adds `"service": { "label": "nl.de-appspecialist.plannotator" }`.
@@ -64,6 +64,7 @@ The route is unversioned, so a client can read any major. A client that supports
 - `file` (string, required): an absolute path to an existing file on this Mac.
 - `reopen` (boolean, optional): reopen a Review the reviewer finished with Approve. A cancelled Review reopens without it.
 - `visibility` (`"local" | "public" | "temporary"`, optional): a new Review opens `local` when none is named; an open without it keeps an existing Review's Visibility.
+- `issue` (object, optional): `{ "id": "WORK-167", "workspace_id": "<workspace id>" }`, both strings trimmed and nonblank. An open without it keeps the stored issue; one with it replaces the issue, including on a `user-ended` answer. A Review stored without `issue` reads as unlinked. Requires the service setting `PLANNOTATOR_MULTICA_PROFILE`; no unlink is provided.
 
 HTTP 200 with `OpenReviewResponse`:
 
@@ -73,15 +74,18 @@ HTTP 200 with `OpenReviewResponse`:
   "link": "http://127.0.0.1:4397/plannotator/session/0123456789abcdef/",
   "status": "opened",
   "round": 1,
-  "visibility": "local"
+  "visibility": "local",
+  "issue": null
 }
 ```
 
-- `status` is `opened`, or `user-ended` when the reviewer finished the Review and `reopen` was not set: nothing was written and `round` is the Round that ended.
-- Opening an ended Review reopens it into the next Round on the same `review_id` and `link`; opening an open Review changes nothing and returns its current Round.
+- `status` is `opened`, or `user-ended` when the reviewer finished the Review and `reopen` was not set: the Round stays ended; an explicit `issue` can still update its link.
+- Opening an ended Review with `reopen` starts the next Round on the same `review_id` and `link`; opening an open Review returns its current Round and can update its Visibility or issue.
 - `link` is the Review's page for its Visibility (`reviewLink` in `routes.ts`): the path is always `/plannotator/session/<review_id>/`, the origin is `http://127.0.0.1:4397` for `local`, `https://ctas.de-appspecialist.nl` for `public` and the ngrok host for `temporary`.
 
 Errors: absent or blank `file` 400 `file path required`; a relative `file` 400 `file must be an absolute path`; a `reopen` that is not a boolean 400 `reopen must be a boolean`; a `visibility` outside the three 400 `visibility must be local, public or temporary`; a missing file 404 with an `error` naming it. None creates a Review.
+
+An invalid `issue` gets 400 `{ "error": "issue requires nonempty id and workspace_id strings" }`. An issue without a configured profile gets 400 `{ "error": "PLANNOTATOR_MULTICA_PROFILE is required to link an issue" }`. Neither refusal opens or changes a Review.
 
 ## List Reviews
 
@@ -95,6 +99,7 @@ Errors: absent or blank `file` 400 `file path required`; a relative `file` 400 `
       "link": "https://ctas.de-appspecialist.nl/plannotator/session/0123456789abcdef/",
       "file": "/absolute/path/to/plan.md",
       "visibility": "public",
+      "issue": null,
       "state": "open",
       "round": 2,
       "round_opened_at": "2026-10-01T09:00:00.000Z",
@@ -107,6 +112,8 @@ Errors: absent or blank `file` 400 `file path required`; a relative `file` 400 `
 ```
 
 Each entry is a `Review`: a `Round` (`review_id`, `round`, `state` of `open`, `finished` or `cancelled`) plus its link, canonical file, Visibility, when the Round opened, how many Remarks are open across all Rounds, when the page was last loaded, and the sessions in its line (see "One listener holds each Review"), the one that holds it first.
+
+`issue` is the stored `{ id, workspace_id }`, or `null` when unlinked. A linked Review's `listeners` is always `[]`, regardless of subscriptions.
 
 With `?file=<absolute path>` (`ListReviewsQuery`) the list holds only that file's Review, and the entry adds `open_items`: its open Remarks as `OpenRemark` (a `Remark` plus `at`, when it was stored), in store order. A file never opened lists `{ "reviews": [] }`. A blank or relative `file` gets 400 `file must be an absolute path`. The list writes nothing.
 
@@ -220,9 +227,25 @@ A `PageRemark` is a `Remark` with `at`, `status` (`open` or `answered`) and `rep
 
 The page reads this route each time its annotation panel opens and lists the Remarks under a "Sent" divider below the draft: each Remark read-only and stamped with its Round, each Reply under every Remark it answers, labelled "Reply" from "Agent", and the Replies that answer no Remark last. Sent Remarks never join the draft, so Send feedback and Approve do not send them again. A failed read logs and shows no "Sent" section.
 
+## Comments on the Multica issue
+
+The service posts each Remark, Approve and Close of a linked Review as one top-level comment on its issue within seconds. An agent's Cancel is not posted. No listener receives any linked Review event, live, on replay or on hand-over.
+
+The author is the member of the Multica CLI profile `PLANNOTATOR_MULTICA_PROFILE` names (`skuddy` in the installed LaunchAgent). Each attempt reads `server_url` and `token` from `~/.multica/profiles/<profile>/config.json`, then sends `POST /api/issues/<issue id>/comments` with bearer authorization and `X-Workspace-ID` from the Review's issue. Credentials never enter review state, the plist or logs.
+
+A Remark comment says **Remark**, links the file name to the Review's current Visibility link, names the Round, quotes each line of the remark's words (`(no text)` for a wordless remark such as a deletion), and lists Item, On (kind, block and one-line excerpt, or the whole page), and Review. It ends with how to answer using `plannotator_reply` with the item id. Approve says **Approved**, quotes notes when present and lists Notice and Review; Close says **Closed … without approving** with the same ids. Code spans use a backtick fence longer than any run in their value. Reviewer text, anchors and notes write `mention://` as `mention:\/\/`, preserving display without forming a Multica mention.
+
+Each record keeps optional `multica: { issue, workspace_id, status: "pending" | "posted", comment_id?, posted_at? }` in `remarks.json` or `notices.json`. Enrollment is stored with the record before posting. Posting a notice also acknowledges it in that same file write. A posted Remark stays open until a Reply answers it.
+
+Per Review, one record posts at a time in store order (Remarks before notices on a timestamp tie); Reviews post independently. Any 2xx answer counts as posted, keeping the answer's `id` as `comment_id` when it has one. Missing profile, network failure, a redirect, a 15-second timeout or non-2xx leaves delivery pending. Retry doubles from one second to five minutes, resetting after success; startup scans pending records. An open with `issue` rewrites pending destinations, enrolls open Remarks no listener received and the pending Approve/Close of the Round the Review is in after the open, and retries immediately. Which sessions received a Remark is stored, so a Remark a listener received before a restart stays with that listener too. Posted records never move; received or answered Remarks, an earlier Round's Approve/Close, acknowledged notices and Cancels are not enrolled. If a relink races an HTTP attempt, the old response cannot mark the new destination posted; the poster logs it as pending (`moved`) and posts to the new destination.
+
+A successful post whose response is lost can be repeated: delivery is at least once, with the item/notice id identifying duplicates. Logs contain Review id, record id, kind and status only, never words, paths or credentials.
+
 ## Listen to Reviews
 
 Connect a WebSocket to `/api/review/v1/listen?session=<omp session id>` on the local service. A missing or blank `session` gets HTTP 400 `session required` during the handshake. A second socket with the same session id replaces the first (the old one closes with code 1000) and starts subscribed to nothing. Every frame is one UTF-8 JSON text frame; a client frame over 64 KiB closes the socket (1009).
+
+A linked Review has no listen line: `listeners` is `[]` and no socket receives its Remarks or notices, including Cancel. The rules below apply to unlinked Reviews only. `plannotator annotate` on a linked Review consequently waits without receiving events; issue runs open linked Reviews through the API instead.
 
 ### One listener holds each Review
 

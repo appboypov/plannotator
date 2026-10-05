@@ -32,8 +32,8 @@ const startPage: StartReviewPage = async (review) => {
   return { port: page.port, stop: page.stop };
 };
 
-async function start(): Promise<ReviewService> {
-  service = await startReviewService({ port: 0, reviewsDir, version: "test", startPage, log: () => {} });
+async function start(multicaProfile: string | null = null): Promise<ReviewService> {
+  service = await startReviewService({ port: 0, reviewsDir, version: "test", startPage, log: () => {}, multicaProfile, multicaHome: dir });
   return service;
 }
 
@@ -98,6 +98,102 @@ describe("review service", () => {
 
     const again = (await (await open(plan)).json()) as OpenReviewResponse;
     expect(again).toEqual(first);
+  });
+
+  test("page Send feedback and Approve post three ordered comments; Cancel posts none", async () => {
+    const comments: string[] = [];
+    const received = Promise.withResolvers<void>();
+    const fake = Bun.serve({ hostname: "127.0.0.1", port: 0, fetch: async (request) => {
+      expect(request.headers.get("X-Workspace-ID")).toBe("W");
+      comments.push((await request.json()).content);
+      if (comments.length === 3) received.resolve();
+      return Response.json({ id: `comment-${comments.length}` }, { status: 201 });
+    } });
+    try {
+      const profileDir = join(dir, ".multica", "profiles", "scratch");
+      mkdirSync(profileDir, { recursive: true });
+      writeFileSync(join(profileDir, "config.json"), JSON.stringify({ server_url: fake.url.origin, token: "fake-token" }));
+      await start("scratch");
+      const issue = { id: "WORK-1", workspace_id: "W" };
+      const { link } = await (await open(document("plan.md", "# Plan\n"), { issue })).json();
+      expect((await fetch(`${link}api/feedback`, { method: "POST", body: JSON.stringify({
+        round: 1, annotations: [{ type: "comment", blockId: "block-1", originalText: "Plan", text: "one" },
+          { type: "comment", blockId: "block-2", originalText: "Ship", text: "two" }],
+      }) })).status).toBe(200);
+      expect((await fetch(`${link}api/approve`, { method: "POST", body: JSON.stringify({ round: 1, feedback: "ship" }) })).status).toBe(200);
+      await received.promise;
+      expect(comments.map((content) => content.match(/> (one|two|ship)/)?.[1])).toEqual(["one", "two", "ship"]);
+      const cancelled = await (await open(document("cancel.md", "# Cancel\n"), { issue })).json();
+      await fetch(`${service!.url}/api/review/v1/reviews/${cancelled.review_id}/cancel`, { method: "POST" });
+      await service!.stop();
+      expect(comments).toHaveLength(3);
+      const notices = JSON.parse(readFileSync(join(reviewsDir, cancelled.review_id, "notices.json"), "utf8")).notices;
+      expect(notices[0]).not.toHaveProperty("multica");
+    } finally { fake.stop(true); }
+  });
+
+  test("a link posts a pre-link Remark and the current Round's Approve, never an earlier Round's", async () => {
+    const comments: string[] = [];
+    const received = Promise.withResolvers<void>();
+    const fake = Bun.serve({ hostname: "127.0.0.1", port: 0, fetch: async (request) => {
+      comments.push((await request.json()).content);
+      if (comments.length === 3) received.resolve();
+      return Response.json({ id: `comment-${comments.length}` }, { status: 201 });
+    } });
+    try {
+      const profileDir = join(dir, ".multica", "profiles", "scratch");
+      mkdirSync(profileDir, { recursive: true });
+      writeFileSync(join(profileDir, "config.json"), JSON.stringify({ server_url: fake.url.origin, token: "fake-token" }));
+      await start("scratch");
+      const issue = { id: "WORK-1", workspace_id: "W" };
+      const reopened = document("reopened.md", "# Reopened\n");
+      const { link } = await (await open(reopened)).json();
+      await fetch(`${link}api/feedback`, { method: "POST", body: JSON.stringify({
+        round: 1, annotations: [{ type: "comment", blockId: "block-1", originalText: "Reopened", text: "pre-link" }] }) });
+      await fetch(`${link}api/approve`, { method: "POST", body: JSON.stringify({ round: 1, feedback: "first round" }) });
+      expect(await (await open(reopened, { issue, reopen: true })).json()).toMatchObject({ round: 2, issue });
+      await fetch(`${link}api/approve`, { method: "POST", body: JSON.stringify({ round: 2, feedback: "second round" }) });
+      const stays = document("stays.md", "# Stays\n");
+      const finished = await (await open(stays)).json();
+      await fetch(`${finished.link}api/approve`, { method: "POST", body: JSON.stringify({ round: 1, feedback: "stays finished" }) });
+      expect(await (await open(stays, { issue })).json()).toMatchObject({ status: "user-ended", round: 1, issue });
+      // A bound earlier-Round Approve would post before "second round" in its store order, so any three comments show it.
+      await received.promise;
+      await service!.stop();
+      const quoted = comments.map((content) => content.match(/> (.+)/)?.[1]).sort();
+      expect(quoted).toEqual(["pre-link", "second round", "stays finished"]);
+    } finally { fake.stop(true); }
+  });
+
+  test("links, keeps, replaces and reloads an issue; a Review stored without issue lists as unlinked", async () => {
+    await start("scratch");
+    const file = document("linked.md", "# Plan\n");
+    const issue = { id: "WORK-1", workspace_id: "W" };
+    expect(await (await open(file, { issue })).json()).toMatchObject({ issue });
+    expect(await (await open(file)).json()).toMatchObject({ issue });
+    const replacement = { id: "WORK-2", workspace_id: "W2" };
+    expect(await (await open(file, { issue: replacement })).json()).toMatchObject({ issue: replacement });
+    const unlinked = await (await open(document("unlinked.md", "# Unlinked\n"))).json();
+    const path = join(reviewsDir, unlinked.review_id, "review.json");
+    const stored = JSON.parse(readFileSync(path, "utf8"));
+    delete stored.issue;
+    writeFileSync(path, JSON.stringify(stored));
+    await service!.stop();
+    await start("scratch");
+    const list = await (await fetch(`${service!.url}/api/review/v1/reviews`)).json();
+    expect(list.reviews.map((review: { issue: unknown }) => review.issue)).toEqual([replacement, null]);
+  });
+
+  test("refuses links before creating or changing a Review", async () => {
+    await start(" ");
+    const file = document("plan.md", "# Plan\n");
+    expect((await open(file, { issue: { id: "WORK-1", workspace_id: "W" } })).status).toBe(400);
+    expect((await (await fetch(`${service!.url}/api/review/v1/reviews`)).json()).reviews).toEqual([]);
+    const original = await (await open(file)).json();
+    for (const issue of [{ id: "WORK-1" }, { id: "WORK-1", workspace_id: " " }, { id: "WORK-1", workspace_id: "W" }]) {
+      expect((await open(file, { issue, visibility: "public" })).status).toBe(400);
+      expect(await (await open(file)).json()).toEqual(original);
+    }
   });
 
   test("the same file through another path keeps its id", async () => {
@@ -182,8 +278,8 @@ describe("review service", () => {
     await start();
     const health = await fetch(`${service!.url}/plannotator/health`);
     expect(health.status).toBe(200);
-    expect(await health.json()).toEqual({ ok: true, app: "plannotator", version: "test", api: { major: 1, minor: 1 } });
-    expect(await (await fetch(`${service!.url}/api/review/version`)).json()).toEqual({ major: 1, minor: 1 });
+    expect(await health.json()).toEqual({ ok: true, app: "plannotator", version: "test", api: { major: 1, minor: 3 } });
+    expect(await (await fetch(`${service!.url}/api/review/version`)).json()).toEqual({ major: 1, minor: 3 });
   });
 
   test("names the LaunchAgent in health when launchd runs it", async () => {
@@ -346,5 +442,11 @@ describe("service settings", () => {
     for (const origin of ["t.example", "ftp://t.example", "https://t.example/path", "https://t.example?x=1"]) {
       expect([origin, resolveServiceSettings([], { PLANNOTATOR_TEMPORARY_ORIGIN: origin }).ok]).toEqual([origin, false]);
     }
+  });
+
+  test("PLANNOTATOR_MULTICA_PROFILE names the profile, trimmed; unset or blank leaves linking off", () => {
+    expect(resolveServiceSettings([], { PLANNOTATOR_MULTICA_PROFILE: " skuddy " })).toMatchObject({ ok: true, value: { multicaProfile: "skuddy" } });
+    expect(resolveServiceSettings([], { PLANNOTATOR_MULTICA_PROFILE: "  " })).toMatchObject({ ok: true, value: { multicaProfile: null } });
+    expect(resolveServiceSettings([], {})).toMatchObject({ ok: true, value: { multicaProfile: null } });
   });
 });

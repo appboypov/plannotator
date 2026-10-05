@@ -65,12 +65,12 @@ The service SHALL serve each Review's page at `/plannotator/session/<review_id>/
 - **THEN** the answer is the plan page's HTML and the list shows the Review's `last_page_open` as that time
 
 ### Requirement: The service answers health and version
-`GET /plannotator/health` SHALL answer HTTP 200 `{ "ok": true, "app": "plannotator", "version": <build version>, "api": { "major": 1, "minor": 1 } }` while the service runs, adding `"service": { "label": <LaunchAgent label> }` when `PLANNOTATOR_SERVICE_LABEL` names the LaunchAgent that runs it, and `GET /api/review/version` SHALL answer `{ "major": 1, "minor": 1 }`. Every route SHALL apply the contract's Host and Origin rule (HTTP 403 `forbidden`).
+`GET /plannotator/health` SHALL answer HTTP 200 `{ "ok": true, "app": "plannotator", "version": <build version>, "api": { "major": 1, "minor": 3 } }` while the service runs, adding `"service": { "label": <LaunchAgent label> }` when `PLANNOTATOR_SERVICE_LABEL` names the LaunchAgent that runs it, and `GET /api/review/version` SHALL answer `{ "major": 1, "minor": 3 }`. Every route SHALL apply the contract's Host and Origin rule (HTTP 403 `forbidden`).
 
 #### Scenario: Health answers while the service runs
 - **GIVEN** `plannotator serve` runs on a dev port
 - **WHEN** a client sends `GET /plannotator/health`
-- **THEN** the answer is HTTP 200 with `ok` true and API major 1 and minor 1
+- **THEN** the answer is HTTP 200 with `ok` true and API major 1 and minor 3
 
 #### Scenario: Health names the LaunchAgent
 - **GIVEN** launchd runs the service as `nl.de-appspecialist.plannotator`
@@ -523,3 +523,11 @@ For every Review a listener holds after a subscription and did not hold before, 
 - **GIVEN** a listener `s1` subscribed to Review A and a pending Finish notice on Review A
 - **WHEN** a listener `s2` subscribes to Review A
 - **THEN** `s2` receives only `subscribed`
+
+### Requirement: The service posts to Multica as the skuddy profile
+The LaunchAgent plist SHALL set `PLANNOTATOR_MULTICA_PROFILE=skuddy`, so a linked Review's comments post as the member of the Multica CLI profile `skuddy`; `PLANNOTATOR_MULTICA_PROFILE` set in the installing shell SHALL be carried over it. The plist SHALL hold the profile name only, never a token: the service reads the profile's server URL and token from `~/.multica/profiles/<profile>/config.json` at each post.
+
+#### Scenario: The installed service names the profile
+- **GIVEN** the install command has run without `PLANNOTATOR_MULTICA_PROFILE` in its shell
+- **WHEN** launchd starts the service
+- **THEN** its environment has `PLANNOTATOR_MULTICA_PROFILE=skuddy` and no Multica token

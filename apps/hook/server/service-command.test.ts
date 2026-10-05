@@ -52,12 +52,14 @@ describe("the LaunchAgent plist", () => {
     expect(plist).toContain("<string>/Users/me/Library/Logs/plannotator/nl.de-appspecialist.plannotator.log</string>");
     expect(plan.environment.PLANNOTATOR_SERVICE_LABEL).toBe(SERVICE_LABEL);
     expect(plan.port).toBe(4397);
-    const { PATH: _path, PLANNOTATOR_SERVICE_LABEL: _label, ...doors } = plan.environment;
-    expect(doors).toEqual({
+    expect(plan.environment).toEqual({
+      PATH: "/Users/me/.local/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin",
+      PLANNOTATOR_SERVICE_LABEL: SERVICE_LABEL,
       PLANNOTATOR_PUBLIC_HOST: "100.111.186.85",
       PLANNOTATOR_PUBLIC_PORT: "4399",
       PLANNOTATOR_PUBLIC_PEER: "100.67.134.112",
       PLANNOTATOR_TEMPORARY_PORT: "4398",
+      PLANNOTATOR_MULTICA_PROFILE: "skuddy",
     });
   });
 
@@ -65,13 +67,16 @@ describe("the LaunchAgent plist", () => {
     const plan = servicePlan({
       home: "/Users/me",
       cwd: "/work",
-      env: { PLANNOTATOR_SERVICE_PORT: "4497", PLANNOTATOR_PUBLIC_PORT: "off", PLANNOTATOR_TEMPORARY_ORIGIN: "https://a.example?x=1&y=<2>", PLANNOTATOR_REVIEWS_DIR: " ", HOME: "/x" },
+      env: { PLANNOTATOR_SERVICE_PORT: "4497", PLANNOTATOR_PUBLIC_PORT: "off", PLANNOTATOR_TEMPORARY_ORIGIN: "https://a.example?x=1&y=<2>", PLANNOTATOR_REVIEWS_DIR: " ", HOME: "/x",
+        PLANNOTATOR_MULTICA_PROFILE: " other ", MULTICA_TOKEN: "never-carried" },
     });
     expect(plan.port).toBe(4497);
     expect(plan.environment.PLANNOTATOR_PUBLIC_PORT).toBe("off");
     expect(plan.environment.PLANNOTATOR_TEMPORARY_PORT).toBe("4398");
     expect(plan.environment.PLANNOTATOR_REVIEWS_DIR).toBeUndefined();
     expect(plan.environment.HOME).toBeUndefined();
+    expect(plan.environment.PLANNOTATOR_MULTICA_PROFILE).toBe("other");
+    expect(Object.values(plan.environment)).not.toContain("never-carried");
     expect(renderPlist(plan)).toContain("<string>https://a.example?x=1&amp;y=&lt;2&gt;</string>");
   });
 
