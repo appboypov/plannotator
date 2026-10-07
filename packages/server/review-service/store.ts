@@ -10,7 +10,7 @@ export const REVIEW_FILE = "review.json";
 /** What a Review keeps on disk; the list adds its link, Remark count and listeners. */
 export type StoredReview = Pick<
   Review,
-  "review_id" | "file" | "visibility" | "round" | "state" | "round_opened_at" | "last_page_open"
+  "review_id" | "file" | "visibility" | "round" | "state" | "round_opened_at" | "last_page_open" | "issue"
 >;
 
 const STATES: readonly string[] = ["open", "finished", "cancelled"];
@@ -104,6 +104,14 @@ export function parseStoredReview(value: unknown, folderId: string): StoredRevie
   if (typeof round !== "number" || !Number.isInteger(round) || round < 1) return undefined;
   if (typeof state !== "string" || !STATES.includes(state)) return undefined;
   if (!isTimeOrNull(round_opened_at) || !isTimeOrNull(last_page_open)) return undefined;
+  let issue: StoredReview["issue"] = null;
+  if (fields.issue != null) {
+    if (typeof fields.issue !== "object" || Array.isArray(fields.issue)) return undefined;
+    const link = fields.issue as Record<string, unknown>;
+    if (typeof link.id !== "string" || !link.id.trim() ||
+        typeof link.workspace_id !== "string" || !link.workspace_id.trim()) return undefined;
+    issue = { id: link.id.trim(), workspace_id: link.workspace_id.trim() };
+  }
   return {
     review_id,
     file,
@@ -112,6 +120,7 @@ export function parseStoredReview(value: unknown, folderId: string): StoredRevie
     state: state as StoredReview["state"],
     round_opened_at,
     last_page_open,
+    issue,
   };
 }
 

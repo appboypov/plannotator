@@ -22,6 +22,16 @@ describe("open request", () => {
     expect(parseOpenReviewRequest({ file: "/tmp/plan.md" })).toEqual({ ok: true, value: { file: "/tmp/plan.md" } });
   });
 
+  test("trims a complete issue and refuses incomplete, blank and non-object links", () => {
+    expect(parseOpenReviewRequest({ file: "/tmp/plan.md", issue: { id: " WORK-1 ", workspace_id: " W " } })).toEqual({
+      ok: true, value: { file: "/tmp/plan.md", issue: { id: "WORK-1", workspace_id: "W" } },
+    });
+    for (const issue of [null, "WORK-1", {}, { id: "WORK-1" }, { id: " ", workspace_id: "W" },
+      { id: "WORK-1", workspace_id: " " }, { id: 1, workspace_id: "W" }]) {
+      expect(parseOpenReviewRequest({ file: "/tmp/plan.md", issue }).ok).toBe(false);
+    }
+  });
+
   test("refuses a missing, blank or relative file", () => {
     expect(parseOpenReviewRequest({})).toEqual({ ok: false, error: ERRORS.fileRequired });
     expect(parseOpenReviewRequest({ file: "  " })).toEqual({ ok: false, error: ERRORS.fileRequired });

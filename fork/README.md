@@ -77,13 +77,15 @@ Set it when opening (`"visibility": "public"`) or at any time with `POST /api/re
 
 `docs/review-api.md` is the contract: Lavish's review API v1 with the same field names (`adr/0004-review-api-v1-matches-lavish.md`), so a Lavish client works against it. In short, on `127.0.0.1:4397`:
 
-- `GET /api/review/version`: `{ "major": 1, "minor": 2 }`; check the major first.
+- `GET /api/review/version`: `{ "major": 1, "minor": 3 }`; check the major first.
 - `POST /api/review/v1/reviews`: open or reopen a canonical file or PR URL's Review; `GET` lists Reviews (`?file=` accepts either subject and adds its open Remarks).
 - `POST /api/review/v1/reviews/:id/replies`, `/cancel`, `/visibility`: Reply to Remarks, cancel the Round, change the Visibility.
 - `GET /api/review/v1/listen?session=<id>` (WebSocket): subscribe to Reviews; Remarks and Finish or Cancel notices wait on disk until a listener takes them, so a Remark sent while no one listens reaches the next listener. One listener holds each Review and alone receives its events: the first that names it, else the first subscribed to all; when it leaves, the next takes the Review with what it has not received (`adr/0008-one-listener-holds-each-review.md`).
 - `GET /plannotator/health`: version, API major and the LaunchAgent label.
 
 Types are in `packages/shared/review-api/`. `plannotator annotate <file>` and a plain `plannotator review <PR_URL>` are clients of this API (`apps/hook/server/annotate-service.ts`, `review-service-client.ts`, ADRs 0007 and 0009); with no service they fail and say to start it. Other upstream modes keep their one-shot server.
+
+Open with optional `issue: { id, workspace_id }` to send every Remark, Approve and Close to that Multica issue as a member comment instead of a listener event. The service requires `PLANNOTATOR_MULTICA_PROFILE`; linked Reviews return `issue` and `listeners: []`, unlinked ones return `issue: null`. Opening without issue keeps it; with another replaces it and redirects pending deliveries. Failed posts retry durably in store order. See "Comments on the Multica issue" in the API contract.
 
 ## Settings
 
@@ -100,6 +102,7 @@ Types are in `packages/shared/review-api/`. `plannotator annotate <file>` and a 
 | `PLANNOTATOR_TEMPORARY_PORT` | unset (`4398` in the plist) | The temporary door's port on 127.0.0.1; unset or `off` opens no temporary door. |
 | `PLANNOTATOR_TEMPORARY_ORIGIN` | `https://knowledgeably-supersweet-kizzie.ngrok-free.dev` | The origin of `temporary` links and the one host the temporary door answers. |
 | `PLANNOTATOR_SERVICE_LABEL` | set by the plist | The LaunchAgent label health reports; not carried. |
+| `PLANNOTATOR_MULTICA_PROFILE` | unset (`skuddy` in the plist) | CLI profile whose member posts linked Review events; reads `~/.multica/profiles/<profile>/config.json` on each attempt. Only the profile name is carried, never a token. |
 
 Upstream's own settings, such as `PLANNOTATOR_BROWSER` and `PLANNOTATOR_SKIP_BROWSER_OPEN`, apply to `annotate` as upstream documents them.
 
@@ -119,7 +122,7 @@ Logs: `~/Library/Logs/plannotator/nl.de-appspecialist.plannotator.log`. The plis
 Review state lives in `~/.plannotator/reviews/<review_id>/`; a dev run keeps its own folder and port, and opens no door as long as its shell leaves the door port settings unset. After `bun run build:review && bun run build:hook`:
 
 ```sh
-PLANNOTATOR_REVIEWS_DIR=/tmp/pn-reviews bun apps/hook/server/index.ts serve --port 4497
+PLANNOTATOR_PUBLIC_PORT=off PLANNOTATOR_TEMPORARY_PORT=off PLANNOTATOR_MULTICA_PROFILE=skuddy PLANNOTATOR_REVIEWS_DIR=/tmp/pn-reviews-work-167 bun apps/hook/server/index.ts serve --port 4497
 ```
 
 Code: `packages/server/review-service/` and `apps/hook/server/serve-command.ts`. The plan page calls upstream's root `/api/...` paths; under a session path `packages/shared/review-api/page-base.ts`, installed first by `apps/hook/review-page-base.ts`, sends those `fetch`, `EventSource`, `WebSocket` and image calls to `<page path>api/...` (`adr/0005-one-upstream-annotate-server-per-review.md`). Specs: `openspec/specs/`.

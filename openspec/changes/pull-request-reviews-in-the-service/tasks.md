@@ -1,6 +1,6 @@
 ## 1. Subjects and API
 
-- [x] 1.1 Accept, canonicalize, persist and list PR URL subjects; serve API 1.2.
+- [x] 1.1 Accept, canonicalize, persist and list PR URL subjects.
 
 ## 2. PR pages and decisions
 

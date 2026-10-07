@@ -20,6 +20,8 @@ export const ERRORS = {
   fileNotAbsolute: "file must be an absolute path",
   visibility: "visibility must be local, public or temporary",
   reopen: "reopen must be a boolean",
+  issue: "issue requires nonempty id and workspace_id strings",
+  multicaProfile: "PLANNOTATOR_MULTICA_PROFILE is required to link an issue",
   replyText: "reply text required",
   answers: "answers must be an array of Feedback item ids",
   unknownRemarks: "unknown feedback items",
@@ -83,6 +85,12 @@ export function parseOpenReviewRequest(body: unknown): Parsed<OpenReviewRequest>
     const visibility = parseVisibility(fields.visibility);
     if (!visibility) return refuse(ERRORS.visibility);
     request.visibility = visibility;
+  }
+  if (fields.issue !== undefined) {
+    const issue = record(fields.issue);
+    if (typeof issue.id !== "string" || !issue.id.trim() ||
+        typeof issue.workspace_id !== "string" || !issue.workspace_id.trim()) return refuse(ERRORS.issue);
+    request.issue = { id: issue.id.trim(), workspace_id: issue.workspace_id.trim() };
   }
   return { ok: true, value: request };
 }

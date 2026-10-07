@@ -44,24 +44,6 @@ The service SHALL serve each Review's page at `/plannotator/session/<review_id>/
 - **WHEN** a browser loads `/plannotator/session/<review_id>/`
 - **THEN** the answer is its subject's page HTML and the list shows the Review's `last_page_open` as that time
 
-### Requirement: The service answers health and version
-`GET /plannotator/health` SHALL answer HTTP 200 `{ "ok": true, "app": "plannotator", "version": <build version>, "api": { "major": 1, "minor": 2 } }` while the service runs, adding `"service": { "label": <LaunchAgent label> }` when `PLANNOTATOR_SERVICE_LABEL` names the LaunchAgent that runs it, and `GET /api/review/version` SHALL answer `{ "major": 1, "minor": 2 }`. Every route SHALL apply the contract's Host and Origin rule (HTTP 403 `forbidden`).
-
-#### Scenario: Health answers while the service runs
-- **GIVEN** `plannotator serve` runs on a dev port
-- **WHEN** a client sends `GET /plannotator/health`
-- **THEN** the answer is HTTP 200 with `ok` true and API major 1 and minor 2
-
-#### Scenario: Health names the LaunchAgent
-- **GIVEN** launchd runs the service as `nl.de-appspecialist.plannotator`
-- **WHEN** a client sends `GET /plannotator/health`
-- **THEN** the answer carries `service.label` `nl.de-appspecialist.plannotator`
-
-#### Scenario: A foreign page cannot open a Review
-- **GIVEN** the service runs
-- **WHEN** a request with `Origin: https://evil.example` posts an open request
-- **THEN** the answer is HTTP 403 and no Review is created
-
 ### Requirement: Replies and Round state show on the page
 A document Review page SHALL list, in its annotation panel, the Remarks the reviewer sent in every Round, read-only and apart from the draft, each with the agents' Replies under it, and SHALL never send a listed Remark again. Every Review page SHALL show the Round number when its Round is finished, cancelled, or replaced by a later Round; a page from an earlier Round SHALL NOT act on the current one. A page covered because its Round ended SHALL replace that cover when a later Round opens. Listing sent Remarks and Replies in the code review UI is outside this requirement.
 

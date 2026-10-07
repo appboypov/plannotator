@@ -62,6 +62,7 @@ export class ReviewListeners {
     private readonly records: ReviewRecords,
     private readonly log: (line: string) => void,
     heartbeatMs: number = LISTEN_HEARTBEAT_MS,
+    private readonly linked: (reviewId: ReviewId) => boolean = () => false,
   ) {
     this.heartbeat = setInterval(() => this.ping(), heartbeatMs);
     this.heartbeat.unref?.();
@@ -126,6 +127,7 @@ export class ReviewListeners {
 
   /** The current sockets whose subscription includes [reviewId], in line order. */
   private line(reviewId: ReviewId): Socket[] {
+    if (this.linked(reviewId)) return [];
     const named: [number, Socket][] = [];
     const all: [number, Socket][] = [];
     for (const socket of this.sockets.values()) {

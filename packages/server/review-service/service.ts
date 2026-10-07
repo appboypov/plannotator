@@ -57,6 +57,7 @@ import { ReviewPages, type StartReviewPage } from "./pages.ts";
 import { ReviewRecords, openRemark, recordId, remarksFromFeedback, type StoredNotice } from "./records.ts";
 import { ReviewStore, reviewIdForFile, type StoredReview } from "./store.ts";
 import { TEMPORARY_DOOR_HOST } from "./settings.ts";
+import { MulticaPoster } from "./multica-poster.ts";
 
 export type ReviewServiceOptions = {
   /** Port on [hostname]; `0` picks a free one (read it from `url`). */
@@ -81,6 +82,10 @@ export type ReviewServiceOptions = {
   temporaryPort?: number | null;
   /** Requests per visitor per minute through a door; 300 unless a test names another. */
   doorRateLimit?: number;
+  /** CLI profile for member comments on linked Reviews; absent disables linking. */
+  multicaProfile?: string | null;
+  /** Profile root override for isolated tests; production uses the service's HOME. */
+  multicaHome?: string;
 };
 
 export type ReviewService = {
@@ -116,8 +121,9 @@ export async function startReviewService(options: ReviewServiceOptions): Promise
     store.all().map((review) => review.review_id),
     (reviewId) => store.folder(reviewId),
     log,
+    (reviewId) => store.get(reviewId)?.issue ?? null,
   );
-  const listeners = new ReviewListeners(records, log, options.heartbeatMs);
+  const listeners = new ReviewListeners(records, log, options.heartbeatMs, (id) => !!store.get(id)?.issue);
   const pages = new ReviewPages(options.startPage);
   const pageRounds = new PageRounds();
   let origins: LinkOrigins;
@@ -202,7 +208,8 @@ export async function startReviewService(options: ReviewServiceOptions): Promise
     if (body === MALFORMED) return error(400, "malformed JSON");
     const parsed = parseOpenReviewRequest(body);
     if (!parsed.ok) return error(400, parsed.error);
-    const { file: requested, visibility, reopen } = parsed.value;
+    const { file: requested, visibility, reopen, issue } = parsed.value;
+    if (issue && !options.multicaProfile?.trim()) return error(400, ERRORS.multicaProfile);
     let file = canonicalPRSubject(requested);
     const pr = file !== undefined;
     if (!file) {
@@ -210,10 +217,20 @@ export async function startReviewService(options: ReviewServiceOptions): Promise
       if (!found?.isFile()) return error(404, `file not found: ${requested}`);
       file = await realpath(requested);
     }
-    const existing = store.find(file);
+    let existing = store.find(file);
     // A PR URL is public, so a PR Review's id, the secret part of its door link, is random (ADR 0009).
     const reviewId = existing?.review_id ?? (pr ? randomBytes(8).toString("hex") : reviewIdForFile(file));
-    // The reviewer's Approve stands until the agent asks to reopen it; nothing is written.
+    if (existing && issue && (existing.issue?.id !== issue.id || existing.issue.workspace_id !== issue.workspace_id)) {
+      existing = { ...existing, issue };
+      await store.save(existing);
+      // The Finish to bind is that of the Round the Review is in after this open: a reopen starts the next one.
+      const finishedStays = existing.state === "finished" && !reopen;
+      await records.relink(reviewId, issue, existing.state === "open" || finishedStays ? existing.round : existing.round + 1);
+      poster.wake(reviewId, true);
+      // An Approve, Close or Cancel may have landed during the writes above.
+      existing = store.get(reviewId) ?? existing;
+    }
+    // The reviewer's Approve stands until the agent asks to reopen it; linking may still update its destination.
     if (existing?.state === "finished" && !reopen) {
       return Response.json({
         review_id: reviewId,
@@ -221,6 +238,7 @@ export async function startReviewService(options: ReviewServiceOptions): Promise
         status: "user-ended",
         round: existing.round,
         visibility: existing.visibility,
+        issue: existing.issue,
       } satisfies OpenReviewResponse);
     }
     const now = new Date().toISOString();
@@ -235,12 +253,17 @@ export async function startReviewService(options: ReviewServiceOptions): Promise
           review_id: reviewId,
           file,
           visibility: visibility ?? "local",
+          issue: issue ?? null,
           round: 1,
           state: "open",
           round_opened_at: now,
           last_page_open: null,
         };
     if (!existing || nextRound || review.visibility !== existing.visibility) await store.save(review);
+    if (!existing && issue) {
+      await records.relink(reviewId, issue, review.round);
+      poster.wake(reviewId, true);
+    }
     if (!existing) log(`opened Review ${reviewId} for ${file}`);
     if (nextRound) {
       log(`opened round ${review.round} of Review ${reviewId}`);
@@ -254,6 +277,7 @@ export async function startReviewService(options: ReviewServiceOptions): Promise
       status: "opened",
       round: review.round,
       visibility: review.visibility,
+      issue: review.issue,
     } satisfies OpenReviewResponse);
   }
 
@@ -374,6 +398,7 @@ export async function startReviewService(options: ReviewServiceOptions): Promise
       const added = remarksFromFeedback(body, current, new Date().toISOString());
       if (added.length > 0) {
         await records.addRemarks(current.review_id, added);
+        if (current.issue) poster.wake(current.review_id);
         log(`stored ${added.length} Remark(s) for Review ${current.review_id} round ${current.round}`);
         await listeners.remarksStored(current.review_id, added);
       }
@@ -406,6 +431,7 @@ export async function startReviewService(options: ReviewServiceOptions): Promise
         : { type: "cancel", ...fields };
     const ended: StoredReview = { ...review, state: end.type === "finish" ? "finished" : "cancelled" };
     await Promise.all([store.save(ended), records.addNotice(notice)]);
+    if (notice.multica) poster.wake(review.review_id);
     log(`${ended.state} round ${ended.round} of Review ${ended.review_id}`);
     pageRounds.publish(roundOf(ended));
     await listeners.noticeStored(notice);
@@ -447,6 +473,13 @@ export async function startReviewService(options: ReviewServiceOptions): Promise
     public: PUBLIC_ORIGIN,
     temporary: options.temporaryOrigin ?? DEFAULT_TEMPORARY_ORIGIN,
   };
+  const poster = new MulticaPoster({
+    records, profile: options.multicaProfile ?? null, home: options.multicaHome, log,
+    reviewOf: (id) => {
+      const review = store.get(id);
+      return review ? { file: review.file, link: reviewLink(id, review.visibility, origins) } : undefined;
+    },
+  });
   log(`review service listening on ${url} with ${store.all().length} Review(s) in ${store.dir}`);
 
   const doorOptions = {
@@ -493,6 +526,7 @@ export async function startReviewService(options: ReviewServiceOptions): Promise
       await Promise.all(doors.map((door) => door.stop()));
       await pages.stopAll();
       server.stop(true);
+      await poster.stop();
       await records.settled();
     },
   };

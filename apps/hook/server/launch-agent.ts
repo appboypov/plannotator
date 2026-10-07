@@ -49,6 +49,7 @@ export const CARRIED_SETTINGS = [
   "PLANNOTATOR_PUBLIC_PEER",
   "PLANNOTATOR_TEMPORARY_PORT",
   "PLANNOTATOR_TEMPORARY_ORIGIN",
+  "PLANNOTATOR_MULTICA_PROFILE",
 ] as const;
 
 const DEFAULT_PORT = 4397;
@@ -108,6 +109,7 @@ export function servicePlan({ home, cwd, env }: { home: string; cwd: string; env
       // launchd starts with /usr/bin:/bin:/usr/sbin:/sbin; pages run git and other tools.
       PATH: [join(home, ".local", "bin"), "/opt/homebrew/bin", "/usr/local/bin", "/usr/bin", "/bin", "/usr/sbin", "/sbin"].join(":"),
       ...LIVE_DOOR_SETTINGS,
+      PLANNOTATOR_MULTICA_PROFILE: "skuddy",
       ...carried,
     },
   };
