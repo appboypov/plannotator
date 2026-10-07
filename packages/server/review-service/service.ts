@@ -220,6 +220,24 @@ export async function startReviewService(options: ReviewServiceOptions): Promise
     let existing = store.find(file);
     // A PR URL is public, so a PR Review's id, the secret part of its door link, is random (ADR 0009).
     const reviewId = existing?.review_id ?? (pr ? randomBytes(8).toString("hex") : reviewIdForFile(file));
+    if (existing?.state === "open") {
+      let moved: boolean;
+      try {
+        moved = await pages.headMoved(reviewId);
+      } catch (cause) {
+        const message = cause instanceof Error ? cause.message : String(cause);
+        log(`could not read the head of ${file} for Review ${reviewId}: ${message}`);
+        return error(502, `could not read the pull request's head: ${message}`);
+      }
+      // An Approve, Close or Cancel may have landed while the head was read.
+      const current = store.get(reviewId) ?? existing;
+      // A PR page shows the head it fetched: a moved head cancels its Round, so the next Round
+      // below shows the head as it is now and an Approve passes only what the reviewer saw.
+      if (moved && current.state === "open" && current.round === existing.round) {
+        log(`head of ${file} moved since round ${current.round} of Review ${reviewId} started`);
+        existing = await endRound(current, { type: "cancel" });
+      } else existing = current;
+    }
     if (existing && issue && (existing.issue?.id !== issue.id || existing.issue.workspace_id !== issue.workspace_id)) {
       existing = { ...existing, issue };
       await store.save(existing);

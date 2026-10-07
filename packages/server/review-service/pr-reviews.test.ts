@@ -18,6 +18,7 @@ let starts: number;
 let cleared: string[];
 let fileReads: (string | null)[];
 let failStart: boolean;
+let head: string;
 
 beforeEach(async () => {
   dir = await mkdtemp(join(tmpdir(), "pn-pr-reviews-"));
@@ -25,12 +26,14 @@ beforeEach(async () => {
   cleared = [];
   fileReads = [];
   failStart = false;
+  head = "h1";
   service = await startReviewService({
     port: 0, reviewsDir: dir, version: "test", log: () => {},
     publicDoor: { host: "127.0.0.1", port: 0, peer: "127.0.0.1" },
     startPage: async (review) => {
       starts++;
       if (failStart) { failStart = false; throw new Error("auth unavailable"); }
+      const shown = head;
       const page = Bun.serve({ hostname: "127.0.0.1", port: 0, fetch(request) {
         const url = new URL(request.url);
         if (request.method === "DELETE") cleared.push(url.pathname + url.search);
@@ -39,9 +42,9 @@ beforeEach(async () => {
           return Response.json({ oldContent: "old", newContent: "new" });
         }
         if (url.pathname === "/") return new Response("<html><head></head><body>Code review</body></html>", { headers: { "content-type": "text/html" } });
-        return Response.json({ rawPatch: `diff for ${review.file}`, platformUser: "reviewer-login", agentCwd: "/private/checkout", repoInfo: {}, gitContext: { cwd: "/private/checkout" }, serverConfig: { gitUser: "private", theme: "dark" } });
+        return Response.json({ rawPatch: `diff for ${review.file} at ${shown}`, platformUser: "reviewer-login", agentCwd: "/private/checkout", repoInfo: {}, gitContext: { cwd: "/private/checkout" }, serverConfig: { gitUser: "private", theme: "dark" } });
       } });
-      return { port: page.port!, stop: () => page.stop(true), patch: PATCH };
+      return { port: page.port!, stop: () => page.stop(true), patch: PATCH, headMoved: async () => head !== shown };
     },
   });
   await Promise.all(service.doors.map((door) => door.bound));
@@ -187,6 +190,17 @@ test("failed PR page startup retries the next request", async () => {
   const review = await open(); failStart = true;
   expect((await fetch(review.link)).status).toBe(502);
   expect((await fetch(review.link)).status).toBe(200);
+  expect(starts).toBe(2);
+});
+
+test("opening an open PR Round after its head moved serves the new head in the next Round", async () => {
+  const review = await open();
+  expect((await (await fetch(`${review.link}api/diff`)).json()).rawPatch).toEndWith("at h1");
+  expect(await open(PR, { reopen: true })).toMatchObject({ status: "opened", round: 1 });
+  head = "h2";
+  expect(await open(PR, { reopen: true })).toMatchObject({ status: "opened", round: 2 });
+  expect((await post(`${review.link}api/feedback`, { round: 1, approved: true, feedback: "Ship" })).status).toBe(409);
+  expect((await (await fetch(`${review.link}api/diff`)).json()).rawPatch).toEndWith("at h2");
   expect(starts).toBe(2);
 });
 

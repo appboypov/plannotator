@@ -6,7 +6,7 @@ A shared fork-owned subject module uses upstream parsePRUrl and formats its plat
 
 ## Pages and decisions
 
-The serve starter branches on the stored subject. PR startup checks auth, fetches the current head and starts upstream startReviewServer with the embedded review HTML and no local checkout. ReviewPages retains its single-flight startup and retry behavior; reopening stops the page. The code review entry imports the fork page glue first. The service translates approved feedback to Finish and code annotations to Remarks, preserving draft clearing and Round refusals.
+The serve starter branches on the stored subject. PR startup checks auth, fetches the current head and starts upstream startReviewServer with the embedded review HTML and no local checkout. ReviewPages retains its single-flight startup and retry behavior; reopening stops the page. A PR Round shows one head: a PR page remembers the head it fetched, and an open of its open Round fetches the PR again; a moved head cancels that Round and starts the next, so the existing Round stream closes open tabs and the Round check refuses their Approve. The code review entry imports the fork page glue first. The service translates approved feedback to Finish and code annotations to Remarks, preserving draft clearing and Round refusals.
 
 ## Doors
 

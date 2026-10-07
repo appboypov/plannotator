@@ -1,12 +1,17 @@
 ## ADDED Requirements
 
 ### Requirement: A PR Review serves upstream code review
-The service SHALL start upstream startReviewServer in PR mode on first page request after auth and fetch, on a free loopback port without a checkout. It SHALL retain that page per Round, stop it when the next Round opens, and retry failed startup on the next request. The review app SHALL install session-path base, Round commands and closure cover before rendering.
+The service SHALL start upstream startReviewServer in PR mode on first page request after auth and fetch, on a free loopback port without a checkout. It SHALL retain that page per Round, stop it when the next Round opens, and retry failed startup on the next request. An open of a PR Review whose open Round's page shows a head the PR has since moved from SHALL cancel that Round and start the next; a head that cannot be read SHALL answer 502 and keep the Round. The review app SHALL install session-path base, Round commands and closure cover before rendering.
 
 #### Scenario: A fresh Round fetches the head
 - **GIVEN** a PR Review whose Round ends
 - **WHEN** it reopens and its page loads
 - **THEN** the service starts a fresh PR page with the PR current head
+
+#### Scenario: A moved head opens the next Round
+- **GIVEN** a PR Review whose Round 1 page shows head h1
+- **WHEN** the PR's head moves to h2 and the agent opens the Review again
+- **THEN** Round 1 is cancelled, the open answers Round 2, Round 1's Approve answers 409, and the page serves head h2
 
 ### Requirement: Code decisions use ordinary Remarks and notices
 The service SHALL answer api/feedback approved true with a Finish carrying feedback as notes. Other feedback SHALL create one Remark per code annotation with text and fenced suggestedCode, selector filePath with line or range unless file scope, lowercase type tag, and originalCode, selectedText or tokenText as anchor text. Each Remark SHALL preserve whole feedback. General text without annotations SHALL be one global_comment. Close SHALL finish with dismissed true. Commands SHALL retain Round refusals and draft clearing.
