@@ -103,7 +103,7 @@ export async function runServeCommand(options: {
         approvalNotesSupported: true,
         htmlContent: options.reviewHtmlContent,
       });
-      return { port: page.port, stop: page.stop };
+      return { port: page.port, stop: page.stop, patch: pr.rawPatch };
     }
     const projectRoot = dirname(review.file);
     const resolution = await resolveAnnotateTarget({

@@ -5,6 +5,8 @@ import type { StoredReview } from "./store.ts";
 export type ReviewPage = {
   port: number;
   stop: () => void;
+  /** A PR page's patch, as fetched when its Round started: the only files a door may expand. */
+  patch?: string;
 };
 
 /** Starts the upstream page server for [review]'s subject; rejects when it cannot. */

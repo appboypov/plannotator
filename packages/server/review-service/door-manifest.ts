@@ -8,6 +8,7 @@
 import { HEALTH_PATH, PAGE_REPLIES_PATH, SESSION_PATH_PREFIX, isReviewId, type ReviewId } from "@plannotator/shared/review-api";
 import { PAGE_ROUND_PATH } from "@plannotator/shared/review-api/page-round";
 import { ANNOTATE_CLIENT_LEASE_STREAM_PATH } from "@plannotator/shared/annotate-client-lease";
+import { findPatchFileEntry } from "@plannotator/shared/review-core";
 
 /** What a door request asks for: the health check, or a Review page's own path (`""`, `/`, `/api/...`). */
 export type DoorMatch = { kind: "health" } | { kind: "page"; reviewId: ReviewId; path: string };
@@ -15,15 +16,30 @@ export type DoorMatch = { kind: "health" } | { kind: "page"; reviewId: ReviewId;
 /** A path a door passes: its methods, and the query parameters it may carry (`"any"` for the page's HTML). */
 type DoorRoute = { methods: readonly string[]; query: readonly string[] | "any" };
 
+/** File expansion: the page server reads any path it names with the provider token. */
+export const DOOR_FILE_CONTENT_PATH = "/api/file-content";
+
 /** PR-only door reads and the payloads whose host identity fields are stripped. */
 export const PR_DOOR_READ_ROUTES: Record<string, DoorRoute & { stripLocalPaths?: true }> = {
   "/api/diff": { methods: ["GET"], query: [], stripLocalPaths: true },
   "/api/diff/fresh": { methods: ["GET"], query: ["snapshot"], stripLocalPaths: true },
   "/api/pr-context": { methods: ["GET"], query: [] },
   "/api/pr-context/stream": { methods: ["GET"], query: [] },
-  "/api/file-content": { methods: ["GET"], query: ["path", "oldPath", "snapshot"] },
+  [DOOR_FILE_CONTENT_PATH]: { methods: ["GET"], query: ["path", "oldPath", "snapshot"] },
   "/api/review-image": { methods: ["GET"], query: ["path", "side", "snapshot"] },
 };
+
+/**
+ * Whether a door's file expansion [query] names a file of [patch]: its `path`, and its
+ * `oldPath` when given. Through a door the read stays in the diff, as `api/review-image` does.
+ */
+export function doorReadsPatchFile(patch: string | undefined, query: URLSearchParams): boolean {
+  const path = query.get("path");
+  const entry = patch && path ? findPatchFileEntry(patch, path) : null;
+  if (!entry) return false;
+  const oldPath = query.get("oldPath");
+  return !oldPath || oldPath === entry.path || oldPath === entry.oldPath;
+}
 
 /**
  * The paths a door passes under a Review page: its HTML, the calls the page makes, its

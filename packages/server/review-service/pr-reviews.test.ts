@@ -11,16 +11,19 @@ import type { OpenReviewResponse } from "@plannotator/shared/review-api";
 import { getReviewDeniedSuffix } from "@plannotator/shared/prompts";
 
 const PR = "https://github.com/owner/repo/pull/22";
+const PATCH = "diff --git a/src/a.ts b/src/a.ts\n--- a/src/a.ts\n+++ b/src/a.ts\n@@ -1 +1 @@\n-old\n+new\n";
 let dir: string;
 let service: ReviewService;
 let starts: number;
 let cleared: string[];
+let fileReads: (string | null)[];
 let failStart: boolean;
 
 beforeEach(async () => {
   dir = await mkdtemp(join(tmpdir(), "pn-pr-reviews-"));
   starts = 0;
   cleared = [];
+  fileReads = [];
   failStart = false;
   service = await startReviewService({
     port: 0, reviewsDir: dir, version: "test", log: () => {},
@@ -31,10 +34,14 @@ beforeEach(async () => {
       const page = Bun.serve({ hostname: "127.0.0.1", port: 0, fetch(request) {
         const url = new URL(request.url);
         if (request.method === "DELETE") cleared.push(url.pathname + url.search);
+        if (url.pathname === "/api/file-content") {
+          fileReads.push(url.searchParams.get("path"));
+          return Response.json({ oldContent: "old", newContent: "new" });
+        }
         if (url.pathname === "/") return new Response("<html><head></head><body>Code review</body></html>", { headers: { "content-type": "text/html" } });
         return Response.json({ rawPatch: `diff for ${review.file}`, platformUser: "reviewer-login", agentCwd: "/private/checkout", repoInfo: {}, gitContext: { cwd: "/private/checkout" }, serverConfig: { gitUser: "private", theme: "dark" } });
       } });
-      return { port: page.port!, stop: () => page.stop(true) };
+      return { port: page.port!, stop: () => page.stop(true), patch: PATCH };
     },
   });
   await Promise.all(service.doors.map((door) => door.bound));
@@ -201,6 +208,18 @@ test("PR door reads strip local paths, refuse external writes and stop at visibi
   const file = join(dir, "plan.md"); await writeFile(file, "Plan");
   const plan = await open(file, { visibility: "public" });
   expect((await fetch(`http://127.0.0.1:${service.doors[0]!.port()}/plannotator/session/${plan.review_id}/api/file-content?path=a.ts`)).status).toBe(404);
+});
+
+test("a door expands only files of the Round's patch, refusing others before the page server", async () => {
+  const review = await open(PR, { visibility: "public" });
+  const link = `http://127.0.0.1:${service.doors[0]!.port()}/plannotator/session/${review.review_id}/api/file-content`;
+  const inDiff = await fetch(`${link}?path=src/a.ts&oldPath=src/a.ts&snapshot=s`);
+  expect(inDiff.status).toBe(200);
+  expect(await inDiff.json()).toEqual({ oldContent: "old", newContent: "new" });
+  for (const query of ["path=.env.production", "path=src/a.ts&oldPath=.env.production", "path="]) {
+    expect((await fetch(`${link}?${query}`)).status).toBe(404);
+  }
+  expect(fileReads).toEqual(["src/a.ts"]);
 });
 
 test("a door refuses a PR Review under the id worked out from its URL", async () => {

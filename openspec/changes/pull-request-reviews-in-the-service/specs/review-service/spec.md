@@ -22,12 +22,17 @@ The service SHALL answer api/feedback approved true with a Finish carrying feedb
 - **AND** another command for that ended Round answers 409 and writes nothing
 
 ### Requirement: Doors expose only PR review reads and Review writes
-A door SHALL allow the PR page, diff, freshness, PR context, file expansion, diff images and existing draft, decision, Round and Reply routes. PR reads SHALL refuse file Reviews. Local checkout, repo and git-user fields SHALL be removed. External writes, PR actions, viewed updates, staging, open-in, agents, AI, config, upload, code navigation and switching SHALL answer 404. Visibility SHALL be checked per request.
+A door SHALL allow the PR page, diff, freshness, PR context, file expansion, diff images and existing draft, decision, Round and Reply routes. PR reads SHALL refuse file Reviews. File expansion SHALL pass only when its path, and its oldPath when given, belong to a file of the Round's patch; any other path SHALL answer 404 before it reaches the page server or the provider. Local checkout, repo and git-user fields SHALL be removed. External writes, PR actions, viewed updates, staging, open-in, agents, AI, config, upload, code navigation and switching SHALL answer 404. Visibility SHALL be checked per request.
 
 #### Scenario: Phone loads and comments but cannot merge
 - **GIVEN** a public PR Review
 - **WHEN** its public door receives GET api/diff, POST api/feedback and POST api/pr-action
 - **THEN** diff and feedback answer and pr-action answers 404
+
+#### Scenario: A door reads only the diff's files
+- **GIVEN** a public PR Review whose Round's patch changes src/a.ts
+- **WHEN** its public door receives GET api/file-content for src/a.ts, for .env.production, and for src/a.ts with oldPath .env.production
+- **THEN** src/a.ts answers with its contents, the other two answer 404, and the page server receives only the src/a.ts request
 
 ## MODIFIED Requirements
 

@@ -10,7 +10,7 @@ The serve starter branches on the stored subject. PR startup checks auth, fetche
 
 ## Doors
 
-The manifest allows only the read routes needed for the PR diff, context, file expansion and diff images plus existing Review commands. PR-only routes refuse file Reviews through a door. Diff responses lose local context, repo and git-user fields. Write routes outside Review state remain denied.
+The manifest allows only the read routes needed for the PR diff, context, file expansion and diff images plus existing Review commands. PR-only routes refuse file Reviews through a door. File expansion reads with the provider token, so a door passes it only for a `path` and `oldPath` of a file in the Round's patch: the PR page carries the patch it was started with, and the service checks it with upstream `findPatchFileEntry` before forwarding, as `api/review-image` already does. Diff responses lose local context, repo and git-user fields. Write routes outside Review state remain denied.
 
 ## CLI
 

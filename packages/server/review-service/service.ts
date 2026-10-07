@@ -52,7 +52,7 @@ import { PAGE_ROUND_META, PAGE_ROUND_PATH } from "@plannotator/shared/review-api
 import { ReviewListeners, listenData, type ListenData } from "./listen.ts";
 import { PageRounds } from "./page-rounds.ts";
 import { startDoor, type Door, type DoorListen } from "./doors.ts";
-import { PR_DOOR_READ_ROUTES } from "./door-manifest.ts";
+import { DOOR_FILE_CONTENT_PATH, PR_DOOR_READ_ROUTES, doorReadsPatchFile } from "./door-manifest.ts";
 import { ReviewPages, type StartReviewPage } from "./pages.ts";
 import { ReviewRecords, openRemark, recordId, remarksFromFeedback, type StoredNotice } from "./records.ts";
 import { ReviewStore, reviewIdForFile, type StoredReview } from "./store.ts";
@@ -447,6 +447,9 @@ export async function startReviewService(options: ReviewServiceOptions): Promise
       log(`page of Review ${review.review_id} failed to start: ${message}`);
       return error(502, `page failed to start: ${message}`);
     }
+    // Through a door, file expansion stays in the Round's patch: the page server would read any path with the provider token.
+    if (new URL(request.url).hostname === "door" && path === DOOR_FILE_CONTENT_PATH
+      && !doorReadsPatchFile(running.patch, new URLSearchParams(search))) return error(404, "not found");
     const answer = await pages.forward(request, running, path, search);
     // Loading the page itself (not its API calls) is what the list reports as `last_page_open`.
     if (request.method === "GET" && path === "/" && answer.ok) {

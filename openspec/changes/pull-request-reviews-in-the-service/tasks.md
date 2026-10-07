@@ -27,6 +27,14 @@
 - [x] 5.4 `adr/0009-one-upstream-review-server-per-pr-review.md`, `docs/invariants.md`, `docs/review-api.md` -- record that a PR Review's id is random and secret.
 - [x] 5.5 Run `bun test packages/server/review-service/pr-reviews.test.ts`: all pass, the door test included.
 
+## 6. A door reads only the diff's files
+
+- [x] 6.1 `packages/server/review-service/pages.ts`, `apps/hook/server/serve-command.ts` -- a PR page carries the patch it serves -- the service checks door reads against the Round's patch without asking GitHub.
+- [x] 6.2 `packages/server/review-service/door-manifest.ts`, `packages/server/review-service/service.ts` -- a door's `api/file-content` whose `path` or `oldPath` is not a file of that patch answers 404 before it reaches the page server -- any other path would read the repository with the provider token.
+- [x] 6.3 `packages/server/review-service/pr-reviews.test.ts` -- a door test: a diff file loads, `.env.production` and a foreign `oldPath` answer 404 and never reach the page server.
+- [x] 6.4 `docs/review-api.md`, `docs/invariants.md` -- record that door file expansion reads only the diff's files.
+- [x] 6.5 Run `bun test packages/server/review-service/pr-reviews.test.ts`: all pass, the door test included.
+
 ## Implementation Notes
 
 The service reuses the upstream PR parser, review server, embedded HTML and review output formatter.
