@@ -13,6 +13,16 @@ The service SHALL start upstream startReviewServer in PR mode on first page requ
 - **WHEN** the PR's head moves to h2 and the agent opens the Review again
 - **THEN** Round 1 is cancelled, the open answers Round 2, Round 1's Approve answers 409, and the page serves head h2
 
+#### Scenario: A head that moved while the service was down opens the next Round
+- **GIVEN** a PR Review whose Round 1 page showed head h1
+- **WHEN** the service restarts, the PR's head moves to h2 and the agent opens the Review again
+- **THEN** Round 1 is cancelled, the open answers Round 2 and Round 1's Approve answers 409
+
+#### Scenario: A head that cannot be read keeps the Round
+- **GIVEN** a PR Review whose Round 1 page runs
+- **WHEN** the provider cannot say the PR's head and the agent opens the Review again
+- **THEN** the open answers 502 and Round 1 stays open
+
 ### Requirement: Code decisions use ordinary Remarks and notices
 The service SHALL answer api/feedback approved true with a Finish carrying feedback as notes. Other feedback SHALL create one Remark per code annotation with text and fenced suggestedCode, selector filePath with line or range unless file scope, lowercase type tag, and originalCode, selectedText or tokenText as anchor text. Each Remark SHALL preserve whole feedback. General text without annotations SHALL be one global_comment. Close SHALL finish with dismissed true. Commands SHALL retain Round refusals and draft clearing.
 

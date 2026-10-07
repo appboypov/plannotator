@@ -11,7 +11,10 @@ export const REVIEW_FILE = "review.json";
 export type StoredReview = Pick<
   Review,
   "review_id" | "file" | "visibility" | "round" | "state" | "round_opened_at" | "last_page_open" | "issue"
->;
+> & {
+  /** A PR Review: the head its open Round's first page showed, kept so a restart still sees the head move. */
+  round_head?: string;
+};
 
 const STATES: readonly string[] = ["open", "finished", "cancelled"];
 
@@ -112,6 +115,7 @@ export function parseStoredReview(value: unknown, folderId: string): StoredRevie
         typeof link.workspace_id !== "string" || !link.workspace_id.trim()) return undefined;
     issue = { id: link.id.trim(), workspace_id: link.workspace_id.trim() };
   }
+  if (fields.round_head !== undefined && typeof fields.round_head !== "string") return undefined;
   return {
     review_id,
     file,
@@ -121,6 +125,7 @@ export function parseStoredReview(value: unknown, folderId: string): StoredRevie
     round_opened_at,
     last_page_open,
     issue,
+    ...(typeof fields.round_head === "string" ? { round_head: fields.round_head } : {}),
   };
 }
 

@@ -129,7 +129,7 @@ export async function startReviewService(options: ReviewServiceOptions): Promise
   let origins: LinkOrigins;
   const doors: Door[] = [];
 
-  const summary = (review: StoredReview): Review => ({
+  const summary = ({ round_head: _roundHead, ...review }: StoredReview): Review => ({
     ...review,
     link: reviewLink(review.review_id, review.visibility, origins),
     open_item_count: records.open(review.review_id).length,
@@ -220,10 +220,13 @@ export async function startReviewService(options: ReviewServiceOptions): Promise
     let existing = store.find(file);
     // A PR URL is public, so a PR Review's id, the secret part of its door link, is random (ADR 0009).
     const reviewId = existing?.review_id ?? (pr ? randomBytes(8).toString("hex") : reviewIdForFile(file));
-    if (existing?.state === "open") {
+    // Only a PR Round whose page has shown a head can show a moved one.
+    if (existing?.state === "open" && existing.round_head !== undefined) {
       let moved: boolean;
       try {
-        moved = await pages.headMoved(reviewId);
+        // The running page, or after a restart a page started now on the current head.
+        const running = await pages.page(existing);
+        moved = running.head !== existing.round_head || ((await running.headMoved?.()) ?? false);
       } catch (cause) {
         const message = cause instanceof Error ? cause.message : String(cause);
         log(`could not read the head of ${file} for Review ${reviewId}: ${message}`);
@@ -231,7 +234,7 @@ export async function startReviewService(options: ReviewServiceOptions): Promise
       }
       // An Approve, Close or Cancel may have landed while the head was read.
       const current = store.get(reviewId) ?? existing;
-      // A PR page shows the head it fetched: a moved head cancels its Round, so the next Round
+      // A Round shows the head its first page fetched: a moved head cancels the Round, so the next Round
       // below shows the head as it is now and an Approve passes only what the reviewer saw.
       if (moved && current.state === "open" && current.round === existing.round) {
         log(`head of ${file} moved since round ${current.round} of Review ${reviewId} started`);
@@ -265,7 +268,7 @@ export async function startReviewService(options: ReviewServiceOptions): Promise
       ? {
           ...existing,
           visibility: visibility ?? existing.visibility,
-          ...(nextRound ? { round: existing.round + 1, state: "open", round_opened_at: now } : {}),
+          ...(nextRound ? { round: existing.round + 1, state: "open", round_opened_at: now, round_head: undefined } : {}),
         }
       : {
           review_id: reviewId,
@@ -466,6 +469,11 @@ export async function startReviewService(options: ReviewServiceOptions): Promise
       return error(502, `page failed to start: ${message}`);
     }
     // Through a door, file expansion stays in the Round's patch: the page server would read any path with the provider token.
+    const shown = store.get(review.review_id) ?? review;
+    // The Round's first page fixes the head the Round shows, so an open after a restart can tell it moved.
+    if (running.head !== undefined && shown.state === "open" && shown.round === review.round && shown.round_head === undefined) {
+      await store.save({ ...shown, round_head: running.head });
+    }
     if (new URL(request.url).hostname === "door" && path === DOOR_FILE_CONTENT_PATH
       && !doorReadsPatchFile(running.patch, new URLSearchParams(search))) return error(404, "not found");
     const answer = await pages.forward(request, running, path, search);

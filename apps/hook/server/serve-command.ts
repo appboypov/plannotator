@@ -108,6 +108,7 @@ export async function runServeCommand(options: {
         port: page.port,
         stop: page.stop,
         patch: pr.rawPatch,
+        head,
         headMoved: async () => (await fetchPR(ref)).metadata.headSha !== head,
       };
     }

@@ -19,6 +19,8 @@ let cleared: string[];
 let fileReads: (string | null)[];
 let failStart: boolean;
 let head: string;
+let headFails: boolean;
+let startPage: Parameters<typeof startReviewService>[0]["startPage"];
 
 beforeEach(async () => {
   dir = await mkdtemp(join(tmpdir(), "pn-pr-reviews-"));
@@ -27,10 +29,8 @@ beforeEach(async () => {
   fileReads = [];
   failStart = false;
   head = "h1";
-  service = await startReviewService({
-    port: 0, reviewsDir: dir, version: "test", log: () => {},
-    publicDoor: { host: "127.0.0.1", port: 0, peer: "127.0.0.1" },
-    startPage: async (review) => {
+  headFails = false;
+  startPage = async (review) => {
       starts++;
       if (failStart) { failStart = false; throw new Error("auth unavailable"); }
       const shown = head;
@@ -44,8 +44,15 @@ beforeEach(async () => {
         if (url.pathname === "/") return new Response("<html><head></head><body>Code review</body></html>", { headers: { "content-type": "text/html" } });
         return Response.json({ rawPatch: `diff for ${review.file} at ${shown}`, platformUser: "reviewer-login", agentCwd: "/private/checkout", repoInfo: {}, gitContext: { cwd: "/private/checkout" }, serverConfig: { gitUser: "private", theme: "dark" } });
       } });
-      return { port: page.port!, stop: () => page.stop(true), patch: PATCH, headMoved: async () => head !== shown };
-    },
+      return { port: page.port!, stop: () => page.stop(true), patch: PATCH, head: shown, headMoved: async () => {
+        if (headFails) throw new Error("provider unavailable");
+        return head !== shown;
+      } };
+    };
+  service = await startReviewService({
+    port: 0, reviewsDir: dir, version: "test", log: () => {},
+    publicDoor: { host: "127.0.0.1", port: 0, peer: "127.0.0.1" },
+    startPage,
   });
   await Promise.all(service.doors.map((door) => door.bound));
 });
@@ -202,6 +209,30 @@ test("opening an open PR Round after its head moved serves the new head in the n
   expect((await post(`${review.link}api/feedback`, { round: 1, approved: true, feedback: "Ship" })).status).toBe(409);
   expect((await (await fetch(`${review.link}api/diff`)).json()).rawPatch).toEndWith("at h2");
   expect(starts).toBe(2);
+});
+
+test("a head that moved while the service was down still opens the next Round", async () => {
+  const review = await open();
+  expect((await (await fetch(`${review.link}api/diff`)).json()).rawPatch).toEndWith("at h1");
+  await service.stop();
+  head = "h2";
+  service = await startReviewService({ port: 0, reviewsDir: dir, version: "test", log: () => {}, startPage });
+  const reopened = await open(PR, { reopen: true });
+  expect(reopened).toMatchObject({ status: "opened", round: 2 });
+  expect((await post(`${reopened.link}api/feedback`, { round: 1, approved: true, feedback: "Ship" })).status).toBe(409);
+  expect((await (await fetch(`${reopened.link}api/diff`)).json()).rawPatch).toEndWith("at h2");
+});
+
+test("a head that cannot be read answers 502 and keeps the Round", async () => {
+  const review = await open();
+  await fetch(`${review.link}api/diff`);
+  headFails = true;
+  const answer = await post(`${service.url}/api/review/v1/reviews`, { file: PR });
+  expect(answer.status).toBe(502);
+  expect((await answer.json()).error).toContain("provider unavailable");
+  const listed = await (await fetch(`${service.url}/api/review/v1/reviews?file=${encodeURIComponent(PR)}`)).json();
+  expect(listed.reviews[0]).toMatchObject({ review_id: review.review_id, state: "open", round: 1 });
+  expect(listed.reviews[0].round_head).toBeUndefined();
 });
 
 test("PR door reads strip local paths, refuse external writes and stop at visibility change", async () => {

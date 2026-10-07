@@ -7,6 +7,8 @@ export type ReviewPage = {
   stop: () => void;
   /** A PR page's patch, as fetched when its Round started: the only files a door may expand. */
   patch?: string;
+  /** A PR page: the head of its pull request as the page fetched it. */
+  head?: string;
   /** A PR page: whether its pull request's head moved since the page fetched it; rejects when the provider cannot say. */
   headMoved?: () => Promise<boolean>;
 };
@@ -39,12 +41,6 @@ export class ReviewPages {
       if (this.pages.get(review.review_id) === starting) this.pages.delete(review.review_id);
     });
     return starting;
-  }
-
-  /** Whether [reviewId]'s running page shows a head that moved since; false when none runs or its subject has no head. */
-  async headMoved(reviewId: ReviewId): Promise<boolean> {
-    const running = await this.pages.get(reviewId)?.catch(() => undefined);
-    return (await running?.headMoved?.()) ?? false;
   }
 
   /** Sends [request] to [page] at [path] (with its leading slash) and streams the answer back. */

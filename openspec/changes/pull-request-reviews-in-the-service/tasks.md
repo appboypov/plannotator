@@ -41,6 +41,7 @@
 - [x] 7.2 `packages/server/review-service/service.ts` -- opening a PR Review whose open Round's page shows a moved head cancels that Round and starts the next; a head that cannot be read answers 502 and keeps the Round -- an Approve passes only the head the reviewer saw.
 - [x] 7.3 `packages/server/review-service/pr-reviews.test.ts` -- an open with the same head keeps Round 1; after the head moves an open starts Round 2, the old Round's Approve answers 409 and the page serves the new head.
 - [x] 7.4 `docs/review-api.md`, `docs/invariants.md` -- record that a moved head starts the next Round.
+- [x] 7.5 `packages/server/review-service/store.ts`, `service.ts`, `pr-reviews.test.ts` -- the Round's first PR page writes its head to `review.json` as `round_head`, and an open with no running page starts one to compare; tests cover a head that moved while the service was down and a head that cannot be read -- a restart cannot hide a moved head.
 - [x] 7.5 Run `bun test packages/server/review-service/pr-reviews.test.ts`: all pass, the moved-head test included.
 
 ## Implementation Notes
