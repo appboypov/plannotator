@@ -7,7 +7,6 @@ This file is the fork's README: the root `README.md` is upstream's and only poin
 - Checkout: `~/Repos/Forks/plannotator`. Worktrees: `~/Worktrees/das/plannotator/<branch>`.
 - Remotes: `origin` = `appboypov/plannotator`, `upstream` = `backnotprop/plannotator`.
 - Base: upstream release `v0.27.22`. The heads before the fresh start are kept as tags `archive/personal-2026-09-30` (old `personal` branch, the one-at-a-time queue and self-updater) and `archive/main-2026-09-30`.
-- Owning intent: `~/Brainspace/intents/das/own-plannotator-at-gates/`.
 
 ## Install and open a document
 
