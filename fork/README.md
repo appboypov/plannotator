@@ -50,7 +50,7 @@ The open API accepts the same URL in `file`, with `visibility: "public"` or `"te
 
 The public and temporary doors expose the PR diff, context, file expansion and diff images plus Review drafts and decisions. They refuse provider mutations (merge, PR review submission, viewed flags), local writes, agents/AI, config, upload, code navigation and switching, and strip local paths. Visibility is checked on every request. See `docs/review-api.md` and ADR 0009.
 
-Mermaid fences in PR descriptions and Markdown artifacts use the plan viewer's diagram renderer in read-only mode, with its source toggle, popout and error display. Compact prose styles exclude diagram content. Text comments remain outside the diagrams; comments on diagram source remain in the Review without SVG text highlights. Ordinary code fences remain code.
+Mermaid fences in PR descriptions and Markdown artifacts use the plan viewer's diagram renderer in read-only mode, with its source toggle, popout and error display. Compact prose styles exclude diagram content and retain diagram spacing and shared typography. Markdown gallery thumbnails are inert; keyboard and pointer activation open the artifact detail, where diagram controls are available. Text comments remain outside the diagrams; comments on diagram source remain in the Review without SVG text highlights. Ordinary code fences remain code.
 
 ## Doors and ports
 

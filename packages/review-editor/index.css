@@ -2828,8 +2828,8 @@ diffs-container {
 .md-compact blockquote:not([data-diagram-block] *) { margin: 0.5rem 0; }
 /* Code blocks: the plan-sized CodeBlock keeps text-[13px] + a 20px my-5 margin,
    so it reads bulky next to the 13px body. Shrink the font below the body and
-   tighten the box. `.my-5` is unique to the code-block wrapper in this renderer. */
-.md-compact .my-5:not([data-diagram-block] *) { margin-top: 0.625rem; margin-bottom: 0.625rem; } /* was 20px */
+   tighten the code box without changing diagram spacing. */
+.md-compact .my-5:not([data-diagram-block], [data-diagram-block] *) { margin-top: 0.625rem; margin-bottom: 0.625rem; } /* was 20px */
 .md-compact pre:not([data-diagram-block] *) { font-size: 0.75rem; }                              /* 12px, under the body */
 .md-compact pre code.pn-code:not([data-diagram-block] *) { padding: 0.5rem 0.625rem; }           /* tighter than the 1rem default */
 
@@ -2850,7 +2850,7 @@ diffs-container {
   overflow-wrap: anywhere;
 }
 .md-compact [data-diagram-block] {
-  font-size: 1rem;
-  line-height: 1.5;
+  font-size: var(--text-base);
+  line-height: var(--leading-normal);
   overflow-wrap: normal;
 }

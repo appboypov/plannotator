@@ -74,7 +74,7 @@ function DocumentPreview({
   }
   return (
     <div ref={previewRef} className="absolute inset-0 overflow-hidden bg-background text-foreground">
-      <div ref={markdownRef} className="pointer-events-none h-[200%] w-[200%] origin-top-left scale-50 overflow-hidden p-7">
+      <div ref={markdownRef} inert aria-hidden="true" className="pointer-events-none h-[200%] w-[200%] origin-top-left scale-50 overflow-hidden p-7">
         <RenderedMarkdown markdown={state.content} className="md-compact max-w-none" />
       </div>
     </div>
