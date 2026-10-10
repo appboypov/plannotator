@@ -81,8 +81,8 @@ export const EXAMPLE_HOVER: CodeNavHoverResponse = {
   },
   alternateDefinition: null,
   references: [
-    { filePath: 'src/checkout/order.ts', line: 42, column: 24 },
-    { filePath: 'src/billing/settle.ts', line: 88, column: 11 },
+    { filePath: 'src/checkout/order.ts', line: 42, column: 24, snippet: '  const receipt = await withRetry(() => charge(order.total));' },
+    { filePath: 'src/billing/settle.ts', line: 88, column: 11, snippet: '    return withRetry(() => postSettlement(batch));' },
   ],
   referenceCount: 7,
   capped: false,

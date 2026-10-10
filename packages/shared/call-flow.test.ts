@@ -18,6 +18,8 @@ import type { ReviewGitRuntime } from "./review-core";
 import { createGitProvider, createJjProvider, createVcsApi } from "./vcs-core";
 
 let repo = "";
+/** Services running a real CallDiff worker; cancelled before their fixture repo is removed. */
+const workerServices: CallFlowService[] = [];
 
 function run(args: string[]): string {
   const result = Bun.spawnSync(["git", ...args], { cwd: repo, stdout: "pipe", stderr: "pipe" });
@@ -35,7 +37,10 @@ beforeEach(() => {
   run(["commit", "-qm", "initial"]);
 });
 
-afterEach(() => rmSync(repo, { recursive: true, force: true }));
+afterEach(() => {
+  for (const service of workerServices.splice(0)) service.cancelAll();
+  rmSync(repo, { recursive: true, force: true });
+});
 
 const runtime: CallFlowRuntime = {
   nodePath: "node",
@@ -614,10 +619,14 @@ describe("CallFlowService", () => {
       version: "0.4.1",
     };
     const service = new CallFlowService({ resolveRuntime: async () => ({ ok: true, runtime: fakeRuntime }) });
+    workerServices.push(service);
+    // The worker's own limit is 45s; this deadline cancels the real worker well
+    // inside the test budget, so the analysis always settles in its own test.
+    AbortSignal.timeout(10_000).addEventListener("abort", () => service.cancelAll(), { once: true });
     const result = await service.analyze({ ...input(), rawPatch });
     expect(result.status).toBe("error");
     if (result.status === "error") expect(result.message).toContain("package installation is disabled during analysis");
-  });
+  }, 15_000);
 
   test("a worker-side grammar race becomes a missing-grammar state", async () => {
     writeFileSync(join(repo, "tool.py"), "def before():\n    pass\n");

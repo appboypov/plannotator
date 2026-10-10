@@ -19,15 +19,21 @@ const files: DiffFile[] = [{
   status: 'modified',
 }];
 
-function target(overrides: Partial<CallFlowAnnotationTarget> = {}): CallFlowAnnotationTarget {
+const step: Pick<CallFlowAnnotationTarget, 'treePath' | 'entry' | 'label' | 'side'> = {
+  treePath: 'entry:0/step:0',
+  entry: 'entry()',
+  label: 'existing()',
+  side: 'new',
+};
+
+function target(
+  overrides: { treePath?: string; lineStart?: number; lineEnd?: number } = {},
+): CallFlowAnnotationTarget {
   return {
-    treePath: 'entry:0/step:0',
-    entry: 'entry()',
-    label: 'existing()',
+    ...step,
     filePath: 'src/flow.ts',
     lineStart: 12,
     lineEnd: 12,
-    side: 'new',
     ...overrides,
   };
 }
@@ -60,9 +66,7 @@ describe('resolveCallFlowAnnotationPlacement', () => {
   });
 
   test('keeps a source-less structural step as review-scoped feedback', () => {
-    expect(resolveCallFlowAnnotationPlacement([
-      target({ filePath: undefined, lineStart: undefined, lineEnd: undefined }),
-    ], files)).toMatchObject({
+    expect(resolveCallFlowAnnotationPlacement([step], files)).toMatchObject({
       scope: 'general',
       filePath: '',
       lineStart: 0,

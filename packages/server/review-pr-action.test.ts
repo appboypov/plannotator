@@ -1,18 +1,17 @@
 import { afterEach, describe, expect, test } from 'bun:test';
-import { mkdtempSync, rmSync } from 'node:fs';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
 import type {
   PRMetadata,
   PRReviewFileComment,
   PRReviewSubmissionResult,
 } from '@plannotator/shared/pr-types';
+import { createTestEnvironment } from '../../tests/helpers/environment';
 import { startReviewServer } from './review';
 
-const originalAI = process.env.PLANNOTATOR_AI;
-const originalDataDir = process.env.PLANNOTATOR_DATA_DIR;
-const originalPath = process.env.PATH;
-const tempDirs: string[] = [];
+const environment = createTestEnvironment(
+  ['PLANNOTATOR_AI', 'PLANNOTATOR_DATA_DIR', 'PATH'],
+  'plannotator-pr-action-',
+);
+const activeServers = new Set<{ stop: () => void }>();
 
 const prMetadata: PRMetadata = {
   platform: 'gitlab',
@@ -35,19 +34,15 @@ const fileComment: PRReviewFileComment = {
   body: 'Handle this failure.',
 };
 
-function makeTempDir(prefix: string): string {
-  const dir = mkdtempSync(join(tmpdir(), prefix));
-  tempDirs.push(dir);
-  return dir;
-}
-
 async function withReviewServer(
   submit: (...args: unknown[]) => Promise<PRReviewSubmissionResult>,
   run: (url: string) => Promise<void>,
 ): Promise<void> {
+  environment.reset();
   process.env.PLANNOTATOR_AI = 'disabled';
-  process.env.PLANNOTATOR_DATA_DIR = makeTempDir('plannotator-pr-action-data-');
-  process.env.PATH = makeTempDir('plannotator-pr-action-path-');
+  process.env.PLANNOTATOR_DATA_DIR = environment.makeTempDir();
+  // An empty PATH: no platform CLI can run for the review session.
+  process.env.PATH = environment.makeTempDir();
   const server = await startReviewServer({
     rawPatch: 'diff --git a/src/failing.ts b/src/failing.ts\n',
     gitRef: 'MR !7',
@@ -55,10 +50,12 @@ async function withReviewServer(
     prMetadata,
     prReviewSubmitter: async (...args) => submit(...args),
   });
+  activeServers.add(server);
   try {
     await run(server.url);
   } finally {
     server.stop();
+    activeServers.delete(server);
   }
 }
 
@@ -74,16 +71,12 @@ async function postReview(url: string): Promise<Response> {
   });
 }
 
+// A session still running when its test ends stops before the environment it
+// was started in is restored.
 afterEach(() => {
-  if (originalAI === undefined) delete process.env.PLANNOTATOR_AI;
-  else process.env.PLANNOTATOR_AI = originalAI;
-  if (originalDataDir === undefined) delete process.env.PLANNOTATOR_DATA_DIR;
-  else process.env.PLANNOTATOR_DATA_DIR = originalDataDir;
-  if (originalPath === undefined) delete process.env.PATH;
-  else process.env.PATH = originalPath;
-  for (const dir of tempDirs.splice(0)) {
-    rmSync(dir, { recursive: true, force: true });
-  }
+  for (const server of activeServers) server.stop();
+  activeServers.clear();
+  environment.restore();
 });
 
 describe('Bun /api/pr-action submission contract', () => {

@@ -237,8 +237,13 @@ export function parseCallDiffWorkerResult(value: unknown): ParsedCallDiffWorkerR
     if (status !== "same" && status !== "added" && status !== "removed") {
       throw new Error("CallDiff worker returned an invalid node status.");
     }
-    const kind = candidate.kind;
-    if (kind !== undefined && kind !== "call" && kind !== "branch") {
+    const rawKind = candidate.kind;
+    let kind: CallFlowNodeKind | undefined;
+    if (rawKind === undefined) {
+      kind = undefined;
+    } else if (rawKind === "call" || rawKind === "branch") {
+      kind = rawKind;
+    } else {
       throw new Error("CallDiff worker returned an invalid node kind.");
     }
     if (!Array.isArray(candidate.children)) {

@@ -141,11 +141,11 @@ describe.if(hasDom)('durable review progress binding', () => {
   test('an explicit uncheck remains suppressed after an in-session content refresh', async () => {
     originalFetch = globalThis.fetch;
     let first = true;
-    globalThis.fetch = (async () => {
+    globalThis.fetch = Object.assign(async () => {
       const data = { ...payload(), suppressedFiles: first ? ['a.ts'] : [] };
       first = false;
       return Response.json(data);
-    }) as typeof fetch;
+    }, { preconnect: () => {} });
     await render('one');
     expect([...suppressed]).toEqual(['a.ts']);
     await render('changed-content');

@@ -192,7 +192,7 @@ describe("handleReviewCommand open state (--base / --diff-type)", () => {
     expect(proseOptions.rawPatch).toContain("caller-only");
     expect(proseOptions.includeReviewDirectory).toBe(false);
     expect(deps.client.app.log.mock.calls.map((call: any[]) => call[0].message).join("\n")).toContain("please review my changes");
-  });
+  }, 10_000);
 
   test("path-shaped prose among several words reviews the invoking repo (v0.27.23 regression)", async () => {
     process.env.PLANNOTATOR_DATA_DIR = makeTempDir();

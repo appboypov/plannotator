@@ -15,7 +15,8 @@ type SemanticDiffOkResponse = Extract<SemanticDiffResponse, { status: 'ok' }>;
 type SemanticDiffErrorResponse = Extract<SemanticDiffResponse, { status: 'error' }>;
 
 type LoadState =
-  | { status: 'idle' | 'loading' }
+  | { status: 'idle' }
+  | { status: 'loading' }
   | { status: 'ready'; data: SemanticDiffOkResponse }
   | { status: 'empty'; data: SemanticDiffOkResponse }
   | { status: 'error'; error: SemanticDiffErrorResponse | Error };

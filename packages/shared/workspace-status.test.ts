@@ -39,10 +39,15 @@ function findGit(): string {
 	return result.stdout.split(/\r?\n/).find(Boolean)?.trim() ?? "";
 }
 
+// Every Git call through a PATH wrapper starts a shell and a Bun process, so a
+// loaded runner needs more than the operation itself to reach the wrapper.
+const WRAPPER_STARTUP_TIMEOUT_MS = 5_000;
+
 async function waitForFile(path: string): Promise<void> {
-	for (let i = 0; i < 50; i++) {
+	const deadline = Date.now() + WRAPPER_STARTUP_TIMEOUT_MS;
+	while (Date.now() < deadline) {
 		if (existsSync(path)) return;
-		await new Promise((resolve) => setTimeout(resolve, 20));
+		await Bun.sleep(20);
 	}
 	throw new Error(`Timed out waiting for ${path}`);
 }
@@ -88,6 +93,7 @@ function installDelayedStatusGitWrapper(wrapperDir: string, signalPath: string):
 function installHangingOnceStatusGitWrapper(wrapperDir: string, markerPath: string): void {
 	const realGit = findGit();
 	const scriptPath = join(wrapperDir, "git-wrapper.mjs");
+	const releasePath = `${markerPath}.release`;
 	writeFileSync(
 		scriptPath,
 		[
@@ -95,10 +101,14 @@ function installHangingOnceStatusGitWrapper(wrapperDir: string, markerPath: stri
 			'import { existsSync, writeFileSync } from "node:fs";',
 			`const realGit = ${JSON.stringify(realGit)};`,
 			`const marker = ${JSON.stringify(markerPath)};`,
+			`const release = ${JSON.stringify(releasePath)};`,
 			"const args = process.argv.slice(2);",
 			"if (args.includes('status') && !existsSync(marker)) {",
 			"  writeFileSync(marker, 'hung');",
-			"  await new Promise(() => {});",
+			"  while (!existsSync(release)) {",
+			"    await Bun.sleep(10);",
+			"  }",
+			"  process.exit(1);",
 			"}",
 			"const result = spawnSync(realGit, args, { encoding: 'utf8', maxBuffer: 20 * 1024 * 1024 });",
 			"if (result.error) {",
@@ -284,17 +294,23 @@ describe("workspace status", () => {
 		installDelayedStatusGitWrapper(wrapperDir, signalPath);
 
 		const first = getWorkspaceStatusForDirectory(docs);
-		await waitForFile(signalPath);
-		writeFileSync(join(docs, "new.md"), "new\n");
-		const second = getWorkspaceStatusForDirectory(docs);
-		writeFileSync(`${signalPath}.release`, "go");
+		try {
+			await waitForFile(signalPath);
+			writeFileSync(join(docs, "new.md"), "new\n");
+			const second = getWorkspaceStatusForDirectory(docs);
+			writeFileSync(`${signalPath}.release`, "go");
 
-		const status = await second;
-		const realDocs = realpathSync(docs);
+			const status = await second;
+			const realDocs = realpathSync(docs);
 
-		expect(status.files[join(realDocs, "new.md")]?.status).toBe("untracked");
-		expect(await first).toBe(status);
-	});
+			expect(status.files[join(realDocs, "new.md")]?.status).toBe("untracked");
+			expect(await first).toBe(status);
+		} finally {
+			// The wrapper finishes before PATH is restored.
+			writeFileSync(`${signalPath}.release`, "go");
+			await first;
+		}
+	}, 10_000);
 
 	test("clears the in-flight status after git times out", async () => {
 		const repo = tempRepo();
@@ -309,12 +325,21 @@ describe("workspace status", () => {
 		installHangingOnceStatusGitWrapper(wrapperDir, markerPath);
 		process.env.PLANNOTATOR_GIT_TIMEOUT_MS = "1000";
 
-		const timedOut = await getWorkspaceStatusForDirectory(docs);
-		expect(timedOut.available).toBe(false);
-		expect(timedOut.error).toContain("git timed out");
+		const timedOut = getWorkspaceStatusForDirectory(docs);
+		try {
+			// The marker proves the PATH wrapper, not the real Git, received the status.
+			await waitForFile(markerPath);
+			const result = await timedOut;
+			expect(result.available).toBe(false);
+			expect(result.error).toContain("git timed out");
 
-		const retried = await getWorkspaceStatusForDirectory(docs);
-		expect(retried.available).toBe(true);
-		expect(retried.totals.files).toBe(0);
-	});
+			const retried = await getWorkspaceStatusForDirectory(docs);
+			expect(retried.available).toBe(true);
+			expect(retried.totals.files).toBe(0);
+		} finally {
+			// The hung wrapper exits before PATH is restored.
+			writeFileSync(`${markerPath}.release`, "go");
+			await timedOut;
+		}
+	}, 10_000);
 });

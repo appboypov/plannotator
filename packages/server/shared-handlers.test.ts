@@ -172,6 +172,7 @@ describe("handleServerReady", () => {
     process.env.__CFBundleIdentifier = "com.apple.Terminal";
     try {
       await handleServerReady("http://localhost:3000", false, 3000, {
+        skipBrowserOpen: false,
         openBrowser: async (u: string) => {
           opened = u;
           return true;
@@ -200,6 +201,7 @@ describe("handleServerReady", () => {
     process.env.__CFBundleIdentifier = "com.openai.codex";
     try {
       await handleServerReady("http://localhost:3000", false, 3000, {
+        skipBrowserOpen: false,
         openBrowser: async () => true,
       });
     } finally {
@@ -225,6 +227,7 @@ describe("handleServerReady", () => {
     };
     try {
       await handleServerReady("http://localhost:4000", false, 4000, {
+        skipBrowserOpen: false,
         openBrowser: async () => false,
       });
     } finally {

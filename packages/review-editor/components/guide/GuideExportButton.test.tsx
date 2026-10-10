@@ -94,11 +94,14 @@ describe('GuideExportButton', () => {
   });
 
   test.skipIf(!hasDom)('renders nothing when the guide is not exportable or the preflight fails', async () => {
-    globalThis.fetch = (() => Promise.resolve(new Response(JSON.stringify({ error: 'not retained' }), { status: 404 }))) as typeof fetch;
+    globalThis.fetch = Object.assign(
+      () => Promise.resolve(new Response(JSON.stringify({ error: 'not retained' }), { status: 404 })),
+      { preconnect: () => {} },
+    );
     await render('job-1');
     expect(host!.querySelector('[data-testid="guide-export"]')).toBeNull();
     expect(shareButton()).toBeNull();
-    globalThis.fetch = (() => Promise.reject(new Error('offline'))) as typeof fetch;
+    globalThis.fetch = Object.assign(() => Promise.reject(new Error('offline')), { preconnect: () => {} });
     await render('job-2');
     expect(host!.querySelector('[data-testid="guide-export"]')).toBeNull();
     expect(shareButton()).toBeNull();

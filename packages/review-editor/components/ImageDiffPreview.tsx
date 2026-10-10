@@ -148,7 +148,7 @@ export const ImageDiffPreview: React.FC<ImageDiffPreviewProps> = ({
           if (controller.signal.aborted) return;
           setStates((prev) => ({
             ...prev,
-            [side]: result.ok ? { state: 'ok', image: result.image } : { state: 'error', error: result.error },
+            [side]: result.ok === true ? { state: 'ok', image: result.image } : { state: 'error', error: result.error },
           }));
         })
         .catch(() => {

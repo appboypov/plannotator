@@ -26,6 +26,14 @@ function hasSourceRange(target: CallFlowAnnotationTarget): target is CallFlowAnn
   );
 }
 
+/** Re-anchor a located target at the diff's path, keeping its line range when it has one. */
+function withDiffFilePath(target: CallFlowAnnotationTarget, filePath: string): CallFlowAnnotationTarget {
+  const step = { treePath: target.treePath, entry: target.entry, label: target.label, side: target.side };
+  return typeof target.lineStart === 'number' && typeof target.lineEnd === 'number'
+    ? { ...step, filePath, lineStart: target.lineStart, lineEnd: target.lineEnd }
+    : { ...step, filePath };
+}
+
 /**
  * Resolve a Call Flow selection onto the strongest native review anchor.
  *
@@ -39,12 +47,12 @@ export function resolveCallFlowAnnotationPlacement(
 ): CallFlowAnnotationPlacement | null {
   if (targets.length === 0) return null;
 
-  const normalizedTargets = targets.map((target) => {
+  const normalizedTargets = targets.map((target): CallFlowAnnotationTarget => {
     if (!target.filePath) return target;
     const file = files.find((candidate) => (
       candidate.path === target.filePath || candidate.oldPath === target.filePath
     ));
-    return file ? { ...target, filePath: file.path } : target;
+    return file ? withDiffFilePath(target, file.path) : target;
   });
 
   for (const target of normalizedTargets) {

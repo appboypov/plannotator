@@ -115,6 +115,23 @@ describe("parseCallDiffWorkerResult", () => {
     })).toThrow("invalid node status");
   });
 
+  test.each([[null], [""], ["loop"], [0], [{}], [[]]])("rejects unsupported node kind %j", (kind) => {
+    expect(() => parseCallDiffWorkerResult({
+      protocol: 1,
+      ok: true,
+      version: "0.4.1",
+      result: {
+        from: "a",
+        to: "b",
+        ascii: "raw",
+        trees: [{
+          entry: "main",
+          tree: { key: "main", label: "main", status: "same", kind, children: [] },
+        }],
+      },
+    })).toThrow("invalid node kind");
+  });
+
   test("rejects absolute and parent-traversing source locations", () => {
     const responseForFile = (file: string) => ({
       protocol: 1,

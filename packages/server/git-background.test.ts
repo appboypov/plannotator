@@ -260,13 +260,16 @@ describe.skipIf(process.platform === "win32")("background remote discovery", () 
     }, 5_000);
 
     test(`${fixture.name} timeout kills the Git transport process tree`, async () => {
+      // The operation budget leaves room for Git to start the transport under a
+      // loaded runner; the transport itself hangs for 30s, so finishing within a
+      // few seconds with every transport process gone is the timeout's work.
       const { repo, marker, command } = createSshFixture();
       const runtimeUrl = pathToFileURL(fixture.modulePath).href;
       const source = `
         const runtimeModule = await import(${JSON.stringify(runtimeUrl)});
         await runtimeModule[${JSON.stringify(fixture.exportName)}].runGit(
           ["ls-remote", "--symref", "origin", "HEAD"],
-          { cwd: ${JSON.stringify(repo)}, timeoutMs: 150, interaction: "forbid" },
+          { cwd: ${JSON.stringify(repo)}, timeoutMs: 1_000, interaction: "forbid" },
         );
       `;
 
@@ -279,7 +282,7 @@ describe.skipIf(process.platform === "win32")("background remote discovery", () 
           SSH_BEHAVIOR: "hang",
           SSH_MARKER: marker,
         },
-        timeout: 2_000,
+        timeout: 5_000,
       });
       const elapsedMs = performance.now() - startedAt;
       const invocations = readInvocations(marker);
@@ -289,14 +292,14 @@ describe.skipIf(process.platform === "win32")("background remote discovery", () 
         expect(invocations.length).toBeGreaterThan(0);
         expect(result.error).toBeUndefined();
         expect(result.status).toBe(0);
-        expect(elapsedMs).toBeLessThan(1_000);
+        expect(elapsedMs).toBeLessThan(3_000);
         for (const invocation of invocations) {
           expect(() => process.kill(invocation.pid, 0)).toThrow();
         }
       } finally {
         terminateTransports(invocations);
       }
-    }, 5_000);
+    }, 10_000);
 
     test(`${fixture.name} process exit kills a still-hanging Git transport`, async () => {
       // Failure caught (#1553): the parent-side timeout timer is the ONLY

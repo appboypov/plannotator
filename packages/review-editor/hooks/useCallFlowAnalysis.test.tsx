@@ -56,13 +56,13 @@ afterEach(async () => {
 describe('useCallFlowAnalysis', () => {
   test.skipIf(!hasDom)('keeps one request per snapshot and retries an error on demand', async () => {
     const requested: string[] = [];
-    globalThis.fetch = async (input) => {
+    globalThis.fetch = Object.assign(async (input) => {
       requested.push(String(input));
       const payload = requested.length === 1
         ? { status: 'error', reason: 'analysis-failed', message: 'temporary failure' }
         : okPayload;
       return new Response(JSON.stringify(payload), { headers: { 'content-type': 'application/json' } });
-    };
+    }, { preconnect: () => {} });
 
     await render();
     expect(host?.querySelector('[data-status]')?.textContent).toBe('error');
@@ -80,12 +80,12 @@ describe('useCallFlowAnalysis', () => {
 
   test.skipIf(!hasDom)('aborts the previous request when the review snapshot changes', async () => {
     const signals: AbortSignal[] = [];
-    globalThis.fetch = (_input, init) => {
+    globalThis.fetch = Object.assign((_input, init) => {
       const signal = init?.signal as AbortSignal;
       signals.push(signal);
       if (signals.length === 1) return new Promise<Response>(() => {});
       return Promise.resolve(new Response(JSON.stringify(okPayload)));
-    };
+    }, { preconnect: () => {} });
 
     await render('old');
     await render('current');

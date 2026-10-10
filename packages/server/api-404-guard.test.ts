@@ -1,8 +1,9 @@
-import { afterAll, afterEach, beforeAll, describe, expect, test } from "bun:test";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { createTestEnvironment } from "../../tests/helpers/environment";
 import { CLASSIC_FAVICON_SVG, FAVICON_PNG_BYTES } from "../core/favicon";
 import { saveConfig } from "./config";
 // Use a distinct module key so unrelated mock.module() tests cannot replace
@@ -29,8 +30,11 @@ const AI_ENDPOINTS_REQUIRING_BACKEND = [
   "/api/ai/sessions",
 ] as const;
 let archivePath = "";
-let dataDirPath = "";
-let savedDataDir: string | undefined;
+// /favicon.png answers from the persisted favicon style, so each case reads
+// config.json from its own temp data dir: no case inherits another's style, and
+// none depends on (or touches) the real ~/.plannotator of whoever runs the tests.
+const environment = createTestEnvironment(["PLANNOTATOR_DATA_DIR"], "plannotator-api-404-data-");
+const runningServers: RunningServer[] = [];
 
 interface RunningServer {
   readonly url: string;
@@ -195,7 +199,9 @@ async function startOnRandomLocalPort(
   process.env.PLANNOTATOR_REMOTE = "0";
 
   try {
-    return await start();
+    const server = await start();
+    runningServers.push(server);
+    return server;
   } finally {
     if (previousPort === undefined) {
       delete process.env.PLANNOTATOR_PORT;
@@ -213,94 +219,84 @@ async function startOnRandomLocalPort(
 describe("API route 404 guards", () => {
   beforeAll(() => {
     archivePath = mkdtempSync(join(tmpdir(), "plannotator-api-404-"));
-    // /favicon.png now answers from the persisted favicon style, so this suite
-    // reads config.json. Point it at a temp dir: it must never depend on (or
-    // touch) the real ~/.plannotator of whoever runs the tests.
-    dataDirPath = mkdtempSync(join(tmpdir(), "plannotator-api-404-data-"));
-    savedDataDir = process.env.PLANNOTATOR_DATA_DIR;
-    process.env.PLANNOTATOR_DATA_DIR = dataDirPath;
   });
 
   afterAll(() => {
     rmSync(archivePath, { recursive: true, force: true });
-    if (savedDataDir === undefined) delete process.env.PLANNOTATOR_DATA_DIR;
-    else process.env.PLANNOTATOR_DATA_DIR = savedDataDir;
-    rmSync(dataDirPath, { recursive: true, force: true });
   });
 
+  beforeEach(() => {
+    environment.reset();
+    process.env.PLANNOTATOR_DATA_DIR = environment.makeTempDir();
+  });
+
+  // Servers stop before their data dir goes, so no late request reads or
+  // writes config after the case ends.
   afterEach(() => {
-    rmSync(join(dataDirPath, "config.json"), { force: true });
+    for (const server of runningServers.splice(0)) server.stop();
+    environment.restore();
   });
 
   for (const serverCase of serverCases) {
     test(`${serverCase.name} returns JSON 404 without breaking API or SPA routes`, async () => {
       const server = await startOnRandomLocalPort(serverCase.start);
 
-      try {
-        expect(server.url).toMatch(/^http:\/\/localhost:\d+$/);
-        await expectJsonNotFound(
-          server,
-          "/api/nonexistent-route?ignored=query",
-        );
-        await expectJsonNotFound(server, "/api/ai/nonexistent-route");
+      expect(server.url).toMatch(/^http:\/\/localhost:\d+$/);
+      await expectJsonNotFound(
+        server,
+        "/api/nonexistent-route?ignored=query",
+      );
+      await expectJsonNotFound(server, "/api/ai/nonexistent-route");
 
-        const knownApiResponse = await fetch(
-          `${server.url}${serverCase.knownApiPath}`,
-        );
-        expect(knownApiResponse.status).toBe(200);
-        expect(knownApiResponse.headers.get("content-type")).toContain(
-          "application/json",
-        );
+      const knownApiResponse = await fetch(
+        `${server.url}${serverCase.knownApiPath}`,
+      );
+      expect(knownApiResponse.status).toBe(200);
+      expect(knownApiResponse.headers.get("content-type")).toContain(
+        "application/json",
+      );
 
-        await expectKnownAICapabilities(server);
-        if (serverCase.knownAIBackendUnavailable) {
-          await expectKnownAIBackendUnavailable(server);
-        }
-
-        const faviconResponse = await fetch(`${server.url}/favicon.png`);
-        expect(faviconResponse.status).toBe(200);
-        expect(faviconResponse.headers.get("content-type")).toBe("image/png");
-        // Was `public, max-age=86400`. One URL now has two possible bodies
-        // (the style is a live preference), so a day-long cache would re-paint
-        // the previous icon on the next session after a switch.
-        expect(faviconResponse.headers.get("cache-control")).toBe("no-cache");
-        expect(new Uint8Array(await faviconResponse.arrayBuffer())).toEqual(
-          FAVICON_PNG_BYTES,
-        );
-
-        // Cross-runtime parity for the classic style: Bun and Pi must agree on
-        // both the bytes and the content type, since the entry HTML's
-        // <link rel="icon"> declares no type of its own.
-        saveConfig({ favicon: "classic" });
-        const classicResponse = await fetch(`${server.url}/favicon.png`);
-        expect(classicResponse.status).toBe(200);
-        expect(classicResponse.headers.get("content-type")).toBe("image/svg+xml");
-        expect(await classicResponse.text()).toBe(CLASSIC_FAVICON_SVG);
-
-        const spaResponse = await fetch(`${server.url}/some/random/path`);
-        expect(spaResponse.status).toBe(200);
-        expect(spaResponse.headers.get("content-type")).toContain("text/html");
-        expect(await spaResponse.text()).toBe(SPA_HTML);
-      } finally {
-        server.stop();
+      await expectKnownAICapabilities(server);
+      if (serverCase.knownAIBackendUnavailable) {
+        await expectKnownAIBackendUnavailable(server);
       }
-    });
+
+      const faviconResponse = await fetch(`${server.url}/favicon.png`);
+      expect(faviconResponse.status).toBe(200);
+      expect(faviconResponse.headers.get("content-type")).toBe("image/png");
+      // Was `public, max-age=86400`. One URL now has two possible bodies
+      // (the style is a live preference), so a day-long cache would re-paint
+      // the previous icon on the next session after a switch.
+      expect(faviconResponse.headers.get("cache-control")).toBe("no-cache");
+      expect(new Uint8Array(await faviconResponse.arrayBuffer())).toEqual(
+        FAVICON_PNG_BYTES,
+      );
+
+      // Cross-runtime parity for the classic style: Bun and Pi must agree on
+      // both the bytes and the content type, since the entry HTML's
+      // <link rel="icon"> declares no type of its own.
+      saveConfig({ favicon: "classic" });
+      const classicResponse = await fetch(`${server.url}/favicon.png`);
+      expect(classicResponse.status).toBe(200);
+      expect(classicResponse.headers.get("content-type")).toBe("image/svg+xml");
+      expect(await classicResponse.text()).toBe(CLASSIC_FAVICON_SVG);
+
+      const spaResponse = await fetch(`${server.url}/some/random/path`);
+      expect(spaResponse.status).toBe(200);
+      expect(spaResponse.headers.get("content-type")).toContain("text/html");
+      expect(await spaResponse.text()).toBe(SPA_HTML);
+    }, 15_000);
   }
 
   for (const serverCase of archiveServerCases) {
     test(`${serverCase.name} rejects document mutations in archive mode`, async () => {
       const server = await startOnRandomLocalPort(serverCase.start);
-
-      try {
-        for (const request of archiveMutationRequests) {
-          const response = await fetch(`${server.url}${request.path}`, {
-            method: request.method,
-          });
-          expect(response.status).toBe(403);
-          expect(await response.json()).toEqual({ error: "Archive is read-only" });
-        }
-      } finally {
-        server.stop();
+      for (const request of archiveMutationRequests) {
+        const response = await fetch(`${server.url}${request.path}`, {
+          method: request.method,
+        });
+        expect(response.status).toBe(403);
+        expect(await response.json()).toEqual({ error: "Archive is read-only" });
       }
     });
   }

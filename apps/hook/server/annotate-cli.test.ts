@@ -25,6 +25,10 @@ const serverDir = import.meta.dir;
 const cliEntry = join(serverDir, "index.ts");
 const distDir = join(serverDir, "..", "dist");
 const distFiles = ["index.html", "review.html"];
+// A CLI run is stopped after CLI_TIMEOUT_MS; CASE_TIMEOUT_MS outlasts it, so a
+// bounded case ends by the child's own limit before the test runner would.
+const CLI_TIMEOUT_MS = 30_000;
+const CASE_TIMEOUT_MS = 35_000;
 
 let fixtureDir: string;
 let dataDir: string;
@@ -48,9 +52,13 @@ function runAnnotate(args: string[], envOverrides: Record<string, string> = {}):
       },
       stdout: "pipe",
       stderr: "pipe",
-      timeout: 30_000,
+      timeout: CLI_TIMEOUT_MS,
     },
   );
+  if (result.exitCode === null) {
+    const reason = result.exitedDueToTimeout ? `its ${CLI_TIMEOUT_MS}ms limit` : result.signalCode;
+    throw new Error(`plannotator annotate ${args.join(" ")} was stopped by ${reason}`);
+  }
   return {
     exitCode: result.exitCode,
     stdout: result.stdout.toString(),
@@ -103,14 +111,14 @@ describe("annotate CLI single-token failures stay legacy", () => {
     expect(result.exitCode).toBe(1);
     expect(result.stderr).toContain("File not found: nope.md");
     expect(result.stdout).toBe("");
-  });
+  }, CASE_TIMEOUT_MS);
 
   test("same with --gate (non-strict): still exit 1, no handoff prose", () => {
     const result = runAnnotate(["nope.md", "--gate"]);
     expect(result.exitCode).toBe(1);
     expect(result.stderr).toContain("File not found: nope.md");
     expect(result.stdout).toBe("");
-  });
+  }, CASE_TIMEOUT_MS);
 });
 
 describe("annotate CLI strict gate bypasses tolerance", () => {
@@ -126,7 +134,7 @@ describe("annotate CLI strict gate bypasses tolerance", () => {
     expect(result.exitCode).toBe(2);
     expect(result.stderr).toContain("File not found: the");
     expect(result.stdout).toBe("");
-  });
+  }, CASE_TIMEOUT_MS);
 
   test("--result-file with natural-language args exits 2, stdout empty", () => {
     const result = runAnnotate([
@@ -141,7 +149,7 @@ describe("annotate CLI strict gate bypasses tolerance", () => {
     expect(result.exitCode).toBe(2);
     expect(result.stderr).toContain("File not found: the");
     expect(result.stdout).toBe("");
-  });
+  }, CASE_TIMEOUT_MS);
 });
 
 describe("annotate CLI --tailscale publish failure exit codes", () => {
