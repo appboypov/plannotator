@@ -1,13 +1,14 @@
 /**
  * `plannotator serve` (fork-owned): runs the review service until the process is
- * stopped. Each Review's page is upstream's annotate server with the plan editor
- * page, started for its document the way `plannotator annotate <file> --gate` starts
- * it, minus the browser, the session registry and the blocking decision.
+ * stopped. Each Review's page is upstream's annotate or PR code review server,
+ * started for its subject with no browser, session registry or blocking decision.
  */
 import { mkdir } from "node:fs/promises";
 import { dirname } from "node:path";
 import { startAnnotateServer, type AnnotateServerOptions } from "@plannotator/server/annotate";
 import { detectProjectName } from "@plannotator/server/project";
+import { startReviewServer } from "@plannotator/server/review";
+import { parsePRUrl, checkPRAuth, fetchPR, getMRLabel, getMRNumberLabel, getDisplayRepo } from "@plannotator/server/pr";
 import {
   DEFAULT_PUBLIC_HOST,
   DEFAULT_PUBLIC_PEER,
@@ -62,6 +63,7 @@ export async function runServeCommand(options: {
   args: readonly string[];
   version: string;
   page: ServePageDefaults;
+  reviewHtmlContent: string;
 }): Promise<void> {
   if (options.args.includes("--help") || options.args.includes("-h")) {
     console.log(SERVE_USAGE);
@@ -84,6 +86,32 @@ export async function runServeCommand(options: {
   process.chdir(reviewsDir);
 
   const startPage: StartReviewPage = async (review) => {
+    const ref = parsePRUrl(review.file);
+    if (ref) {
+      await checkPRAuth(ref);
+      console.error(`[plannotator] fetching ${review.file} for Review ${review.review_id} round ${review.round}`);
+      const pr = await fetchPR(ref);
+      const page = await startReviewServer({
+        rawPatch: pr.rawPatch,
+        gitRef: `${getMRLabel(ref)} ${getMRNumberLabel(ref)}`,
+        prMetadata: pr.metadata,
+        prPatchIncomplete: pr.patchIncomplete ?? false,
+        project: getDisplayRepo(ref),
+        origin: options.page.origin,
+        sharingEnabled: options.page.sharingEnabled,
+        shareBaseUrl: options.page.shareBaseUrl,
+        approvalNotesSupported: true,
+        htmlContent: options.reviewHtmlContent,
+      });
+      const head = pr.metadata.headSha;
+      return {
+        port: page.port,
+        stop: page.stop,
+        patch: pr.rawPatch,
+        head,
+        headMoved: async () => (await fetchPR(ref)).metadata.headSha !== head,
+      };
+    }
     const projectRoot = dirname(review.file);
     const resolution = await resolveAnnotateTarget({
       rawFilePath: review.file,

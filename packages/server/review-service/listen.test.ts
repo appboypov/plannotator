@@ -670,7 +670,7 @@ describe("Rounds, Approve, Cancel and list", () => {
     expect(approved).not.toHaveProperty("dismissed");
 
     finish = listener.until("finish");
-    expect((await post(`${second.link}api/exit?generation=1&round=1`)).status).toBe(200);
+    expect((await post(`${second.link}api/exit?draftGeneration=1&round=1`)).status).toBe(200);
     expect((await finish).at(-1)).toMatchObject({ review_id: second.review_id, notes: "", dismissed: true });
   });
 

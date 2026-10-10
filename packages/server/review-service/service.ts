@@ -10,7 +10,9 @@
  * page's Remarks with their Replies (`api/review-replies`).
  * Contract: docs/review-api.md.
  */
+import { randomBytes } from "node:crypto";
 import { realpath, stat } from "node:fs/promises";
+import { canonicalPRSubject } from "@plannotator/shared/review-api/subject";
 import {
   API_VERSION,
   DEFAULT_TEMPORARY_ORIGIN,
@@ -50,6 +52,7 @@ import { PAGE_ROUND_META, PAGE_ROUND_PATH } from "@plannotator/shared/review-api
 import { ReviewListeners, listenData, type ListenData } from "./listen.ts";
 import { PageRounds } from "./page-rounds.ts";
 import { startDoor, type Door, type DoorListen } from "./doors.ts";
+import { DOOR_FILE_CONTENT_PATH, PR_DOOR_READ_ROUTES, doorReadsPatchFile } from "./door-manifest.ts";
 import { ReviewPages, type StartReviewPage } from "./pages.ts";
 import { ReviewRecords, openRemark, recordId, remarksFromFeedback, type StoredNotice } from "./records.ts";
 import { ReviewStore, reviewIdForFile, type StoredReview } from "./store.ts";
@@ -126,7 +129,7 @@ export async function startReviewService(options: ReviewServiceOptions): Promise
   let origins: LinkOrigins;
   const doors: Door[] = [];
 
-  const summary = (review: StoredReview): Review => ({
+  const summary = ({ round_head: _roundHead, ...review }: StoredReview): Review => ({
     ...review,
     link: reviewLink(review.review_id, review.visibility, origins),
     open_item_count: records.open(review.review_id).length,
@@ -191,6 +194,9 @@ export async function startReviewService(options: ReviewServiceOptions): Promise
     // The page calls its API relative to its own path, which needs the trailing slash.
     if (rest.length === 0) return Response.redirect(`${reviewPagePath(reviewId)}${url.search}`, 308);
     const path = `/${rest.join("/")}`;
+    // PR read routes behind a door belong only to a PR subject, never to a local file page.
+    if (url.hostname === "door" && Object.hasOwn(PR_DOOR_READ_ROUTES, path)
+      && !canonicalPRSubject(review.file)) return error(404, "not found");
     const command = method === "POST" ? PAGE_COMMANDS[path] : undefined;
     if (command) return pageCommand(command, review, request, url);
     if (method === "GET" && path === ROUND_STREAM_PATH) return pageRounds.stream(roundOf(review));
@@ -204,11 +210,37 @@ export async function startReviewService(options: ReviewServiceOptions): Promise
     if (!parsed.ok) return error(400, parsed.error);
     const { file: requested, visibility, reopen, issue } = parsed.value;
     if (issue && !options.multicaProfile?.trim()) return error(400, ERRORS.multicaProfile);
-    const found = await stat(requested).catch(() => undefined);
-    if (!found?.isFile()) return error(404, `file not found: ${requested}`);
-    const file = await realpath(requested);
-    const reviewId = reviewIdForFile(file);
-    let existing = store.get(reviewId);
+    let file = canonicalPRSubject(requested);
+    const pr = file !== undefined;
+    if (!file) {
+      const found = await stat(requested).catch(() => undefined);
+      if (!found?.isFile()) return error(404, `file not found: ${requested}`);
+      file = await realpath(requested);
+    }
+    let existing = store.find(file);
+    // A PR URL is public, so a PR Review's id, the secret part of its door link, is random (ADR 0009).
+    const reviewId = existing?.review_id ?? (pr ? randomBytes(8).toString("hex") : reviewIdForFile(file));
+    // Only a PR Round whose page has shown a head can show a moved one.
+    if (existing?.state === "open" && existing.round_head !== undefined) {
+      let moved: boolean;
+      try {
+        // The running page, or after a restart a page started now on the current head.
+        const running = await pages.page(existing);
+        moved = running.head !== existing.round_head || ((await running.headMoved?.()) ?? false);
+      } catch (cause) {
+        const message = cause instanceof Error ? cause.message : String(cause);
+        log(`could not read the head of ${file} for Review ${reviewId}: ${message}`);
+        return error(502, `could not read the pull request's head: ${message}`);
+      }
+      // An Approve, Close or Cancel may have landed while the head was read.
+      const current = store.get(reviewId) ?? existing;
+      // A Round shows the head its first page fetched: a moved head cancels the Round, so the next Round
+      // below shows the head as it is now and an Approve passes only what the reviewer saw.
+      if (moved && current.state === "open" && current.round === existing.round) {
+        log(`head of ${file} moved since round ${current.round} of Review ${reviewId} started`);
+        existing = await endRound(current, { type: "cancel" });
+      } else existing = current;
+    }
     if (existing && issue && (existing.issue?.id !== issue.id || existing.issue.workspace_id !== issue.workspace_id)) {
       existing = { ...existing, issue };
       await store.save(existing);
@@ -219,7 +251,7 @@ export async function startReviewService(options: ReviewServiceOptions): Promise
       // An Approve, Close or Cancel may have landed during the writes above.
       existing = store.get(reviewId) ?? existing;
     }
-    // Approve stands until reopening is requested; linking may still update its destination.
+    // The reviewer's Approve stands until the agent asks to reopen it; linking may still update its destination.
     if (existing?.state === "finished" && !reopen) {
       return Response.json({
         review_id: reviewId,
@@ -236,7 +268,7 @@ export async function startReviewService(options: ReviewServiceOptions): Promise
       ? {
           ...existing,
           visibility: visibility ?? existing.visibility,
-          ...(nextRound ? { round: existing.round + 1, state: "open", round_opened_at: now } : {}),
+          ...(nextRound ? { round: existing.round + 1, state: "open", round_opened_at: now, round_head: undefined } : {}),
         }
       : {
           review_id: reviewId,
@@ -274,7 +306,7 @@ export async function startReviewService(options: ReviewServiceOptions): Promise
     const parsed = parseListReviewsQuery(fileQuery);
     if (!parsed.ok) return error(400, parsed.error);
     const { file } = parsed.value;
-    const canonical = file === undefined ? undefined : await realpath(file).catch(() => file);
+    const canonical = file === undefined ? undefined : canonicalPRSubject(file) ?? await realpath(file).catch(() => file);
     const reviews = store
       .all()
       .filter((review) => canonical === undefined || review.file === canonical)
@@ -361,6 +393,7 @@ export async function startReviewService(options: ReviewServiceOptions): Promise
   async function pageCommand(command: PageCommand, review: StoredReview, request: Request, url: URL): Promise<Response> {
     const body = command === "exit" ? {} : await readJson(request);
     if (body === MALFORMED) return error(400, "malformed JSON");
+    if (command === "feedback" && canonicalPRSubject(review.file) && field(body, "approved") === true) command = "approve";
     const roundQuery = url.searchParams.get("round");
     const round = parsePageRound(command === "exit" ? (roundQuery === null ? undefined : Number(roundQuery)) : field(body, "round"));
     if (!round.ok) return error(400, round.error);
@@ -370,7 +403,7 @@ export async function startReviewService(options: ReviewServiceOptions): Promise
     const refused = roundRefusal(arrived, round.value);
     if (refused) return Response.json(refused satisfies RoundRefusal, { status: 409 });
 
-    const generation = command === "exit" ? url.searchParams.get("generation") : field(body, "draftGeneration");
+    const generation = command === "exit" ? url.searchParams.get("draftGeneration") : field(body, "draftGeneration");
     const search = typeof generation === "number" || typeof generation === "string" ? `?generation=${generation}` : "";
     const cleared = await page(new Request(request.url, { method: "DELETE" }), arrived, DRAFT_PATH, search);
     if (!cleared.ok) {
@@ -435,6 +468,14 @@ export async function startReviewService(options: ReviewServiceOptions): Promise
       log(`page of Review ${review.review_id} failed to start: ${message}`);
       return error(502, `page failed to start: ${message}`);
     }
+    // Through a door, file expansion stays in the Round's patch: the page server would read any path with the provider token.
+    const shown = store.get(review.review_id) ?? review;
+    // The Round's first page fixes the head the Round shows, so an open after a restart can tell it moved.
+    if (running.head !== undefined && shown.state === "open" && shown.round === review.round && shown.round_head === undefined) {
+      await store.save({ ...shown, round_head: running.head });
+    }
+    if (new URL(request.url).hostname === "door" && path === DOOR_FILE_CONTENT_PATH
+      && !doorReadsPatchFile(running.patch, new URLSearchParams(search))) return error(404, "not found");
     const answer = await pages.forward(request, running, path, search);
     // Loading the page itself (not its API calls) is what the list reports as `last_page_open`.
     if (request.method === "GET" && path === "/" && answer.ok) {

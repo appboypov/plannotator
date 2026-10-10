@@ -23,7 +23,7 @@ import { createServer, type IncomingMessage, type ServerResponse } from "node:ht
 import type { Socket } from "node:net";
 import { basename } from "node:path";
 import type { ReviewId, Visibility } from "@plannotator/shared/review-api";
-import { matchDoorRequest } from "./door-manifest.ts";
+import { matchDoorRequest, PR_DOOR_READ_ROUTES } from "./door-manifest.ts";
 
 /** Where a door binds and the one address it accepts. */
 export type DoorListen = { host: string; port: number; peer: string };
@@ -160,6 +160,9 @@ export function startDoor(options: DoorOptions): Door {
       return;
     }
     if (method === "GET" && match.path === "/api/plan" && answer.ok) answer = await withoutLocalPaths(answer);
+    if (method === "GET" && PR_DOOR_READ_ROUTES[match.path]?.stripLocalPaths && answer.ok) {
+      answer = await withoutReviewLocalPaths(answer);
+    }
     await send(res, answer, method);
   }
 
@@ -305,6 +308,21 @@ async function withoutLocalPaths(answer: Response): Promise<Response> {
   data.sourceSave = { enabled: false, reason: "not-local-file" };
   data.agentTerminal = { enabled: false, reason: "not-annotate-mode" };
   if (data.serverConfig) delete data.serverConfig.gitUser;
+  const headers = new Headers(answer.headers);
+  headers.delete("content-length");
+  return new Response(JSON.stringify(data), { status: answer.status, headers });
+}
+
+/** PR diff payloads expose no host checkout, repository or git identity through a door. */
+async function withoutReviewLocalPaths(answer: Response): Promise<Response> {
+  const data = await answer.json() as Record<string, unknown>;
+  delete data.agentCwd;
+  delete data.gitContext;
+  delete data.repoInfo;
+  delete data.aiReviewContext;
+  delete data.platformUser;
+  data.aiEnabled = false;
+  if (data.serverConfig && typeof data.serverConfig === "object") Reflect.deleteProperty(data.serverConfig, "gitUser");
   const headers = new Headers(answer.headers);
   headers.delete("content-length");
   return new Response(JSON.stringify(data), { status: answer.status, headers });

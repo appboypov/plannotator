@@ -105,13 +105,31 @@ export function remarksFromFeedback(
   if (!Array.isArray(annotations) || annotations.length === 0) {
     return "feedback" in sent ? [remark(feedback, { selector: "", tag: "global_comment", text: "" })] : [];
   }
-  return annotations.map((annotation: unknown) =>
-    remark(text(field(annotation, "text")), {
+  return annotations.map((annotation: unknown) => {
+    const filePath = field(annotation, "filePath");
+    const scope = field(annotation, "scope");
+    const general = scope === "general" || filePath === "";
+    if (typeof filePath === "string" || general) {
+      const start = field(annotation, "lineStart");
+      const end = field(annotation, "lineEnd");
+      const fileScope = scope === "file";
+      const selector = general ? "" : fileScope || typeof start !== "number"
+        ? text(filePath)
+        : `${filePath}:${start}${typeof end === "number" && end !== start ? `-${end}` : ""}`;
+      const suggestion = field(annotation, "suggestedCode");
+      const words = text(field(annotation, "text"));
+      return remark(typeof suggestion === "string" ? `${words}\n\n\`\`\`\n${suggestion}\n\`\`\`` : words, {
+        selector,
+        tag: general ? "global_comment" : text(field(annotation, "type")).toLowerCase(),
+        text: text(field(annotation, "originalCode") ?? field(annotation, "selectedText") ?? field(annotation, "tokenText")),
+      });
+    }
+    return remark(text(field(annotation, "text")), {
       selector: text(field(annotation, "blockId")),
       tag: text(field(annotation, "type")).toLowerCase(),
       text: text(field(annotation, "originalText")),
-    }),
-  );
+    });
+  });
 }
 
 /** [remark] as the listen socket's frame. */

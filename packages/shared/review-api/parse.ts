@@ -1,4 +1,4 @@
-import { isAbsolute } from "node:path";
+import { parseReviewSubject } from "./subject";
 import {
   VISIBILITIES,
   type ListenClientMessage,
@@ -74,8 +74,9 @@ export function parseOpenReviewRequest(body: unknown): Parsed<OpenReviewRequest>
   const fields = record(body);
   const file = fields.file;
   if (typeof file !== "string" || !file.trim()) return refuse(ERRORS.fileRequired);
-  if (!isAbsolute(file)) return refuse(ERRORS.fileNotAbsolute);
-  const request: OpenReviewRequest = { file };
+  const subject = parseReviewSubject(file);
+  if (!subject.ok) return subject;
+  const request: OpenReviewRequest = { file: subject.value };
   if (fields.reopen !== undefined) {
     if (typeof fields.reopen !== "boolean") return refuse(ERRORS.reopen);
     request.reopen = fields.reopen;
@@ -97,8 +98,8 @@ export function parseOpenReviewRequest(body: unknown): Parsed<OpenReviewRequest>
 /** The `file` query of `GET /api/review/v1/reviews`; `null` when the query has none. */
 export function parseListReviewsQuery(file: string | null): Parsed<ListReviewsQuery> {
   if (file === null) return { ok: true, value: {} };
-  if (!file.trim() || !isAbsolute(file)) return refuse(ERRORS.fileNotAbsolute);
-  return { ok: true, value: { file } };
+  const subject = parseReviewSubject(file);
+  return subject.ok ? { ok: true, value: { file: subject.value } } : subject;
 }
 
 /** The body of `POST /api/review/v1/reviews/:review_id/replies`; duplicate answers count once. */

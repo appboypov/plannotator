@@ -1,6 +1,7 @@
 import { createHash, randomBytes } from "node:crypto";
 import { mkdir, readdir, readFile, rename, writeFile } from "node:fs/promises";
-import { isAbsolute, join } from "node:path";
+import { join } from "node:path";
+import { parseReviewSubject } from "@plannotator/shared/review-api/subject";
 import { isReviewId, VISIBILITIES, type Review, type ReviewId } from "@plannotator/shared/review-api";
 
 /** A Review's state file inside its own folder: `<reviews dir>/<review_id>/review.json`. */
@@ -10,11 +11,14 @@ export const REVIEW_FILE = "review.json";
 export type StoredReview = Pick<
   Review,
   "review_id" | "file" | "visibility" | "round" | "state" | "round_opened_at" | "last_page_open" | "issue"
->;
+> & {
+  /** A PR Review: the head its open Round's first page showed, kept so a restart still sees the head move. */
+  round_head?: string;
+};
 
 const STATES: readonly string[] = ["open", "finished", "cancelled"];
 
-/** A Review's id: the first 16 hex characters of the SHA-256 of its canonical absolute path. */
+/** A file Review's id: the first 16 hex characters of the SHA-256 of its canonical path. */
 export function reviewIdForFile(canonicalFile: string): ReviewId {
   return createHash("sha256").update(canonicalFile).digest("hex").slice(0, 16);
 }
@@ -59,6 +63,12 @@ export class ReviewStore {
     return [...this.reviews.values()];
   }
 
+  /** The Review of [subject], a canonical file path or PR/MR URL. */
+  find(subject: string): StoredReview | undefined {
+    for (const review of this.reviews.values()) if (review.file === subject) return review;
+    return undefined;
+  }
+
   /** The folder that holds this Review's state; later stories keep Remarks and Replies here. */
   folder(reviewId: ReviewId): string {
     return join(this.dir, reviewId);
@@ -92,7 +102,7 @@ export function parseStoredReview(value: unknown, folderId: string): StoredRevie
   const fields = value as Record<string, unknown>;
   const { review_id, file, visibility, round, state, round_opened_at, last_page_open } = fields;
   if (review_id !== folderId || !isReviewId(review_id)) return undefined;
-  if (typeof file !== "string" || !isAbsolute(file)) return undefined;
+  if (typeof file !== "string" || !parseReviewSubject(file).ok) return undefined;
   if (!VISIBILITIES.includes(visibility as never)) return undefined;
   if (typeof round !== "number" || !Number.isInteger(round) || round < 1) return undefined;
   if (typeof state !== "string" || !STATES.includes(state)) return undefined;
@@ -105,6 +115,7 @@ export function parseStoredReview(value: unknown, folderId: string): StoredRevie
         typeof link.workspace_id !== "string" || !link.workspace_id.trim()) return undefined;
     issue = { id: link.id.trim(), workspace_id: link.workspace_id.trim() };
   }
+  if (fields.round_head !== undefined && typeof fields.round_head !== "string") return undefined;
   return {
     review_id,
     file,
@@ -114,6 +125,7 @@ export function parseStoredReview(value: unknown, folderId: string): StoredRevie
     round_opened_at,
     last_page_open,
     issue,
+    ...(typeof fields.round_head === "string" ? { round_head: fields.round_head } : {}),
   };
 }
 

@@ -46,13 +46,13 @@ describe("installReviewPageRound", () => {
 
     await review.globals.fetch(`${BASE}api/feedback`, { method: "POST", body: JSON.stringify({ annotations: [] }) });
     await review.globals.fetch("/api/approve", { method: "POST", body: JSON.stringify({ feedback: "ok" }) });
-    await review.globals.fetch(`${BASE}api/exit?generation=4`, { method: "POST" });
+    await review.globals.fetch(`${BASE}api/exit?draftGeneration=4`, { method: "POST" });
     await review.globals.fetch(`${BASE}api/draft`, { method: "POST", body: JSON.stringify({ a: 1 }) });
     await review.globals.fetch(`${BASE}api/feedback`, { method: "POST", body: "not json" });
 
     expect(JSON.parse(String(review.sent[0].init?.body))).toEqual({ annotations: [], round: 2 });
     expect(JSON.parse(String(review.sent[1].init?.body))).toEqual({ feedback: "ok", round: 2 });
-    expect(review.sent[2].url).toBe(`${BASE}api/exit?generation=4&round=2`);
+    expect(review.sent[2].url).toBe(`${BASE}api/exit?draftGeneration=4&round=2`);
     expect(review.sent[3].init?.body).toBe(JSON.stringify({ a: 1 }));
     expect(review.sent[4].init?.body).toBe("not json");
   });
@@ -68,6 +68,16 @@ describe("installReviewPageRound", () => {
     await approved.globals.fetch(`${BASE}api/approve`, { method: "POST", body: "{}" });
     await approved.push(1, "finished");
     expect(approved.closures).toEqual([]);
+  });
+
+  test("code-review approval through feedback keeps its completion screen and pins the Round", async () => {
+    const approved = page(BASE, undefined, "3");
+    await approved.globals.fetch(`${BASE}api/feedback`, { method: "POST", body: JSON.stringify({ approved: true, draftGeneration: 4 }) });
+    expect(JSON.parse(String(approved.sent[0]!.init?.body))).toEqual({ approved: true, draftGeneration: 4, round: 3 });
+    await approved.push(3, "finished");
+    expect(approved.closures).toEqual([]);
+    await approved.push(4, "open");
+    expect(approved.closures).toEqual([{ kind: "next-round", round: 4 }]);
   });
 
   test("a later Round, or a refused command, closes the page once", async () => {

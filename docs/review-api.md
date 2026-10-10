@@ -6,8 +6,8 @@ The types live in `packages/shared/review-api/` (import `@plannotator/shared/rev
 
 ## Words
 
-- **Review**: one document's lasting link and state. Its id is 16 lowercase hex characters and stays the same when the same file is opened again.
-- **Round**: a numbered pass over a Review, starting at 1. Approve finishes it, Cancel cancels it, opening the file again starts the next Round on the same link.
+- **Review**: one document or pull/merge request's lasting link and state. Its id is 16 lowercase hex characters and stays the same when the same canonical subject is opened again.
+- **Round**: a numbered pass over a Review, starting at 1. Approve finishes it, Cancel cancels it, reopening starts the next Round on the same link and fetches a PR's current head.
 - **Remark**: one annotation the reviewer sent with Send feedback. On the wire it is a `feedback_item` with an `fi_` id, as in Lavish.
 - **Reply**: an agent's answer, shown on the page beside the Remarks it answers.
 - **Visibility**: who can open the page. `local` (this Mac), `public` (anyone with the link, through `https://ctas.de-appspecialist.nl`) or `temporary` (anyone with the link, through the ngrok host).
@@ -18,7 +18,7 @@ The types live in `packages/shared/review-api/` (import `@plannotator/shared/rev
 |---|---|---|---|
 | `GET` | `/api/review/version` | none | `ApiVersion` |
 | `POST` | `/api/review/v1/reviews` | `OpenReviewRequest` | `OpenReviewResponse` |
-| `GET` | `/api/review/v1/reviews[?file=<absolute path>]` | `ListReviewsQuery` | `ListReviewsResponse` |
+| `GET` | `/api/review/v1/reviews[?file=<absolute path or PR URL>]` | `ListReviewsQuery` | `ListReviewsResponse` |
 | `POST` | `/api/review/v1/reviews/:review_id/replies` | `ReplyRequest` | `ReplyResponse` |
 | `POST` | `/api/review/v1/reviews/:review_id/cancel` | none | `CancelReviewResponse` |
 | `POST` | `/api/review/v1/reviews/:review_id/visibility` | `VisibilityRequest` | `VisibilityResponse` |
@@ -61,7 +61,7 @@ The route is unversioned, so a client can read any major. A client that supports
 { "file": "/absolute/path/to/plan.md", "reopen": false, "visibility": "local" }
 ```
 
-- `file` (string, required): an absolute path to an existing file on this Mac.
+- `file` (string, required): an absolute path to an existing file on this Mac, or a pull/merge request URL accepted by upstream `parsePRUrl` (GitHub, GitLab or Bitbucket Cloud). PR URLs normalize to their canonical platform URL: `/files`, trailing slash and other accepted suffixes identify the same Review. Open checks URL shape only, without authentication or network access, except that an open Round with a running page fetches the PR once to compare its head. Authentication and PR fetching happen on the first page request.
 - `reopen` (boolean, optional): reopen a Review the reviewer finished with Approve. A cancelled Review reopens without it.
 - `visibility` (`"local" | "public" | "temporary"`, optional): a new Review opens `local` when none is named; an open without it keeps an existing Review's Visibility.
 - `issue` (object, optional): `{ "id": "WORK-167", "workspace_id": "<workspace id>" }`, both strings trimmed and nonblank. An open without it keeps the stored issue; one with it replaces the issue, including on a `user-ended` answer. A Review stored without `issue` reads as unlinked. Requires the service setting `PLANNOTATOR_MULTICA_PROFILE`; no unlink is provided.
@@ -81,10 +81,12 @@ HTTP 200 with `OpenReviewResponse`:
 
 - `status` is `opened`, or `user-ended` when the reviewer finished the Review and `reopen` was not set: the Round stays ended; an explicit `issue` can still update its link.
 - Opening an ended Review with `reopen` starts the next Round on the same `review_id` and `link`; opening an open Review returns its current Round and can update its Visibility or issue.
+- Opening a PR Review whose open Round's page shows a head the PR has since moved from, also when the service restarted in between, cancels that Round with a Cancel notice and starts the next, whose page shows the current head. Open pages close on the Round stream and the old Round's commands answer 409, so an Approve passes only the head the reviewer saw.
 - `link` is the Review's page for its Visibility (`reviewLink` in `routes.ts`): the path is always `/plannotator/session/<review_id>/`, the origin is `http://127.0.0.1:4397` for `local`, `https://ctas.de-appspecialist.nl` for `public` and the ngrok host for `temporary`.
 
-Errors: absent or blank `file` 400 `file path required`; a relative `file` 400 `file must be an absolute path`; a `reopen` that is not a boolean 400 `reopen must be a boolean`; a `visibility` outside the three 400 `visibility must be local, public or temporary`; a missing file 404 with an `error` naming it. None creates a Review.
+Errors: absent or blank `file` 400 `file path required`; a relative `file` 400 `file must be an absolute path`; a `reopen` that is not a boolean 400 `reopen must be a boolean`; a `visibility` outside the three 400 `visibility must be local, public or temporary`; a missing file 404 with an `error` naming it; a PR head that cannot be read for an open Round 502 `could not read the pull request's head: <cause>`, keeping the Round. None creates a Review.
 
+An unsupported HTTP(S) URL answers 400 with `Invalid PR/MR URL: <the URL>` and creates no Review. A PR's `review_id` is 16 random hex characters made when its Review is first opened; every later open of any form of its URL returns it. For example `{"file":"https://github.com/appboypov/plannotator/pull/22/files","visibility":"public"}` opens the Review for `https://github.com/appboypov/plannotator/pull/22`. `reopen`, Visibility, Replies and Cancel use the same routes and lifecycle for both subjects.
 An invalid `issue` gets 400 `{ "error": "issue requires nonempty id and workspace_id strings" }`. An issue without a configured profile gets 400 `{ "error": "PLANNOTATOR_MULTICA_PROFILE is required to link an issue" }`. Neither refusal opens or changes a Review.
 
 ## List Reviews
@@ -111,11 +113,11 @@ An invalid `issue` gets 400 `{ "error": "issue requires nonempty id and workspac
 }
 ```
 
-Each entry is a `Review`: a `Round` (`review_id`, `round`, `state` of `open`, `finished` or `cancelled`) plus its link, canonical file, Visibility, when the Round opened, how many Remarks are open across all Rounds, when the page was last loaded, and the sessions in its line (see "One listener holds each Review"), the one that holds it first.
+Each entry is a `Review`: a `Round` (`review_id`, `round`, `state` of `open`, `finished` or `cancelled`) plus its link, canonical subject in `file` (absolute path or PR URL), Visibility, when the Round opened, how many Remarks are open across all Rounds, when the page was last loaded, and the sessions in its line (see "One listener holds each Review"), the one that holds it first.
 
 `issue` is the stored `{ id, workspace_id }`, or `null` when unlinked. A linked Review's `listeners` is always `[]`, regardless of subscriptions.
 
-With `?file=<absolute path>` (`ListReviewsQuery`) the list holds only that file's Review, and the entry adds `open_items`: its open Remarks as `OpenRemark` (a `Remark` plus `at`, when it was stored), in store order. A file never opened lists `{ "reviews": [] }`. A blank or relative `file` gets 400 `file must be an absolute path`. The list writes nothing.
+With `?file=<absolute path or PR URL>` (`ListReviewsQuery`) the list holds only that subject's Review, and the entry adds `open_items`: its open Remarks as `OpenRemark` (a `Remark` plus `at`, when it was stored), in store order. PR URLs canonicalize through upstream `parsePRUrl` exactly as open does, so an agent's `/files` URL finds the canonical Review. Paths keep their existing symlink resolution. A subject never opened lists `{ "reviews": [] }`. A blank or relative `file` gets 400 `file must be an absolute path`; an unsupported HTTP(S) URL gets 400 naming it. The list writes nothing and fetches no PR.
 
 ## Reply to a Review
 
@@ -179,6 +181,8 @@ A `visibility` outside the three gets 400 `visibility must be local, public or t
 ## The page's Round-checked commands
 
 The Review page calls its API relative to its own path (`/plannotator/session/<review_id>/api/...`); those are upstream Plannotator's page routes, not part of v1. Two of them close or feed a Round and accept an optional integer `round` in their JSON body, the Round the page shows: Send feedback (`api/feedback`) and Approve (`api/approve`). A command whose `round` is not the Review's current open Round writes nothing and answers HTTP 409 with a `RoundRefusal`:
+
+A PR page sends Approve to `api/feedback` with `approved: true`; the service finishes its Round with `feedback` as notes and stores no annotation Remarks. With `approved` false or absent it stores feedback Remarks. `api/exit` finishes with `dismissed: true`, taking `round` and `draftGeneration` in its query. These commands clear the sent draft before storage and use the same Round refusals.
 
 ```json
 { "status": "stale-round", "error": "round 1 is not open; the Review is in round 2", "round": 2 }
@@ -280,6 +284,8 @@ The line holds every listener, so `listeners` in the list and the page's presenc
 - `anchor` (`RemarkAnchor`): `selector` is the annotated block's id (`""` for a global comment), `tag` the annotation kind lowercase (`comment`, `deletion`, `global_comment`), `text` the annotated excerpt. Each is `""` when the page sent none.
 - `feedback` (Plannotator's addition, absent when the page sent no text): the page's whole Send feedback text the Remark came with, upstream's agent-facing markdown, which also holds what is not a Remark (question answers, images, code annotations). Every Remark of one Send feedback carries the same text.
 
+For code annotations, `anchor.selector` is `<filePath>:<lineStart>` or `<filePath>:<lineStart>-<lineEnd>`; a file-scope annotation uses just `<filePath>`. An annotation with general scope or an empty file path uses selector `""` and tag `global_comment`. Other annotations use the lowercase annotation type as `anchor.tag`. `anchor.text` is the first present `originalCode`, `selectedText` or `tokenText`, or `""`. `text` holds the comment and appends `suggestedCode` in a fenced block when present, including an empty suggestion that removes the annotated code. A send with only general `feedback` creates one `global_comment`. Every Remark retains the whole `feedback` text. The code review UI does not list sent Remarks or Replies.
+
 An open Remark reaches each listener session once: it goes to its Review's holder, and is replayed to each next holder until a Reply answers it, except to a session that already received it, on this socket or an earlier one. The service stores which sessions received each Remark, so a reconnect under the same session id, even after a restart, does not bring it back. A listener that must not lose a Remark hands it over before it acts on the next frame.
 
 `Notice`, stored and replayed to each next holder until acknowledged:
@@ -311,12 +317,14 @@ A door is a second listener that lets clients elsewhere open the pages of Review
 - **The temporary door** serves `temporary` Reviews for the ngrok tunnel (`ngrok http 4398 --url=<origin>`). It binds `127.0.0.1:PLANNOTATOR_TEMPORARY_PORT` and accepts only `127.0.0.1`, ngrok's agent on this Mac; neither is a setting. `PLANNOTATOR_TEMPORARY_ORIGIN` (an http or https origin, default `https://knowledgeably-supersweet-kizzie.ngrok-free.dev`) is the origin of `temporary` links and the one host the door answers. ngrok's free plan shows a warning page unless the client sends `ngrok-skip-browser-warning`.
 - **Which doors open:** a door opens only when its port is set; `off` or unset opens none. `plannotator serve` run by hand opens no door. The LaunchAgent (`plannotator service install`) runs the live doors, public `100.111.186.85:4399` for `100.67.134.112` and temporary `127.0.0.1:4398`, unless the installing shell names other settings.
 - **Peer:** a socket from any other address is destroyed on connect, before a byte is read; each refused address is logged once per minute.
-- **Manifest** (`door-manifest.ts`): `GET|HEAD /plannotator/health` and, under `/plannotator/session/<review_id>`, the page itself (`""` redirects to `/`), `favicon.png`, `GET api/plan`, `api/plan/version`, `api/plan/versions`, `GET|POST|DELETE api/draft`, `POST api/feedback`, `api/approve`, `api/exit`, `GET api/review-round`, `api/review-replies` and `api/annotate/client-lease`. Everything else answers 404: the review API, the listen socket, the page's file, image, document, source-save, settings, AI and agent-terminal routes. Every WebSocket upgrade answers 404.
+- **Manifest** (`door-manifest.ts`): `GET|HEAD /plannotator/health` and, under `/plannotator/session/<review_id>`, the page itself (`""` redirects to `/`), favicon, plan and version reads, draft (`GET|POST|DELETE`, optional `generation`), feedback/approve/exit (`POST`), Round stream, Replies and annotate client lease (`GET`). For PR subjects it also serves `GET api/diff`, `api/diff/fresh` (`snapshot`), `api/pr-context`, `api/file-content` (`path`, `oldPath`, `snapshot`) and `api/review-image` (`path`, `side`, `snapshot`). These PR reads refuse local file Reviews. Everything outside the manifest answers 404, including the review API, listen socket, local images/documents, `api/pr-action`, `api/pr-viewed`, staging, open-in, agents/AI, config, upload, code navigation and PR/worktree switching. Every WebSocket upgrade answers 404.
+- **Live PR context:** `GET api/pr-context/stream` is also a PR-only door read, with no query parameters. The code review page uses this SSE stream for comments, checks and merge status.
+- **Diff files only:** through a door, `api/file-content` answers 404 unless its `path`, and its `oldPath` when given, belong to a file of the Round's patch, the patch the PR page was started with. The page server reads any other path of the repository with the provider token, so the service refuses it before forwarding.
 - **Visibility per request:** a page route answers 404 unless the Review's Visibility is the door's at that moment. Changing a Review's Visibility away from the door's closes its open requests through the door, such as the Round stream.
 - **Hosts:** `Host` and the last `X-Forwarded-Host` must be one of the door's hostnames, else 404: for the public door `ctas.de-appspecialist.nl` or the door's own address, for the temporary door only the host of `PLANNOTATOR_TEMPORARY_ORIGIN`.
 - **Rate limit:** 300 requests per visitor per minute, keyed on the last `X-Forwarded-For` entry (else the socket address); over it HTTP 429 with `Retry-After`.
 - **Framing:** every answer carries `content-security-policy: frame-ancestors 'none'` and `x-frame-options: DENY`.
-- **No local paths:** through a door, `api/plan` gives `filePath` and `sourceInfo` as the file name, drops `projectRoot`, `repoInfo` and `serverConfig.gitUser`, and turns off source save and the agent terminal.
+- **No local paths:** through a door, `api/plan` gives `filePath` and `sourceInfo` as the file name, drops `projectRoot`, `repoInfo` and `serverConfig.gitUser`, and turns off source save and the agent terminal. PR diff and freshness responses drop `agentCwd`, `gitContext`, `repoInfo`, `aiReviewContext`, `platformUser` and `serverConfig.gitUser`, and advertise AI as disabled.
 - The door answers allowed routes with the service's own handlers (health, page commands, Round stream, Replies, the page server), streamed unbuffered.
 
 ## The service
@@ -330,8 +338,8 @@ plannotator serve [--port <n>]   # 127.0.0.1:4397; --port, else PLANNOTATOR_SERV
 - Each Review's state lives in its own folder, `<reviews dir>/<review_id>/review.json`. The reviews dir is `PLANNOTATOR_REVIEWS_DIR`, else `reviews` in Plannotator's data dir (`~/.plannotator/reviews`, moved by `PLANNOTATOR_DATA_DIR`). The service loads every folder when it starts, so ids and links survive restarts.
 - A Review's Remarks live next to it, in `<reviews dir>/<review_id>/remarks.json`: `{ "remarks": [ … ] }`, each a `Remark` with `at` (when it was stored), `status` (`open`, or `answered` once a Reply answers it) and `delivered_to` (the listener sessions it reached, in order).
 - A Review's Replies live next to it, in `<reviews dir>/<review_id>/replies.json`: `{ "replies": [ … ] }`, each a `Reply`, in the order they were sent. A Reply naming Remarks marks them `answered` in `remarks.json`.
-- A Review's id is the first 16 hex characters of the SHA-256 of the file's canonical path (symlinks resolved).
-- The page at `/plannotator/session/<review_id>/` is upstream's plan page: the service starts upstream's annotate server for the Review's document on first request, on a free loopback port, and forwards `/plannotator/session/<review_id>/<rest>` to `/<rest>` on it (ADR 0005). `GET /plannotator/session/<review_id>/api/plan` returns the document. A page that cannot start answers HTTP 502 `page failed to start: <reason>`.
+- A file Review's id is the first 16 hex characters of the SHA-256 of its path (symlinks resolved). A PR Review's id is 16 random hex characters, kept in its `review.json`, because its link must not follow from the public PR URL.
+- The page at `/plannotator/session/<review_id>/` uses upstream's plan server for documents or upstream's PR code review server for PRs. The service starts it on first request, on a free loopback port, and forwards `/plannotator/session/<review_id>/<rest>` to `/<rest>` there (ADRs 0005 and 0009). Each Round starts a fresh page; PR startup checks provider authentication and fetches the current head without a local checkout.
 - Send feedback (`POST /plannotator/session/<review_id>/api/feedback`, upstream's body) is the service's own: each entry of `annotations` becomes one Remark of the current Round (anchor `selector` from `blockId`, `tag` from `type`, `text` from `originalText`, `feedback` from the body's `feedback` text), stored before the answer `{ "ok": true }` and sent to the Review's listeners. A send with `feedback` text but no annotations (only question answers or code annotations, or the page's empty Done) is one `global_comment` Remark whose `text` and `feedback` are that text; a send with neither stores nothing. The page's sent draft is cleared first; when that fails the answer is HTTP 502 and nothing is stored. The page server never sees it, so the reviewer can send feedback again.
 - A Review's notices live next to it, in `<reviews dir>/<review_id>/notices.json`: `{ "notices": [ … ] }`, each a Finish or Cancel `Notice` with `status` (`pending`, or `acknowledged` with `acknowledged_at` once a listener acks it). A pending notice is replayed to every subscription that adds its Review until it is acknowledged.
 - The page's Round-checked commands are answered by the service, not the upstream page server (ADR 0006): Send feedback (`api/feedback`) stores Remarks; Approve (`api/approve`) finishes the Round with a Finish notice whose `notes` are the page's `feedback` text (`""` without notes; its annotations are not Remarks); Close (`api/exit`) finishes it with empty notes and `dismissed: true`. Each takes an optional `round` (body field; `?round=` for Close): not a positive integer answers 400 `round must be a positive integer`, an ended Round answers 409 `ended`, another Round answers 409 `stale-round`, and nothing is written. The page's own Round stream (`<link>api/review-round`, an event stream of `Round`) sends the Round on connect and whenever it ends or the next opens; the page's HTML pins the Round it was loaded in (`<meta name="plannotator-review-round">`), and the page sends that Round with each command and closes itself when the Round is over for it.
@@ -351,3 +359,7 @@ plannotator serve [--port <n>]   # 127.0.0.1:4397; --port, else PLANNOTATOR_SERV
    - Another agent's Cancel of the Round, with no Remarks taken, fails the call: `Round <n> of <link> was cancelled by another agent.`
 
 When nothing answers, the call fails with exit code 1 (2 under a strict flag) and tells how to start the service; it does not fall back to upstream's one-shot server, so a stopped service is never hidden. URLs, folders, `--markdown`, live apps and `--tailscale` keep upstream's one-shot server, since the service has no page for them.
+
+## `plannotator review <PR_URL>` through the service
+
+A call with only a supported PR/MR URL and optional `--json` opens or reopens its Review, prints its local link, opens the browser unless `PLANNOTATOR_SKIP_BROWSER_OPEN=1`, and waits with its own listen session. It reuses the annotate Round transport and prints upstream review output (`decision` and `message` in JSON): Approve includes notes, Send feedback prints the page's feedback and cancels the Round, Close prints dismissed. Taken Remarks receive a Reply before the call leaves. No service answers means failure naming `plannotator serve`, with no fallback. `--local`, `--no-local`, other mode flags and other review targets keep upstream's one-shot server.
