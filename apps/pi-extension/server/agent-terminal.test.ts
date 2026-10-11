@@ -3,7 +3,7 @@ import { createServer } from "node:http";
 import { AGENT_TERMINAL_WS_BASE_PATH } from "../generated/agent-terminal.ts";
 import { createNodeAgentTerminalBridge, normalizeSpawnOptions } from "./agent-terminal.ts";
 import { startAnnotateServer } from "./serverAnnotate.ts";
-import { createTestEnvironment } from "../../../tests/helpers/environment";
+import { createTestEnvironment } from "../../../tests/helpers/environment.ts";
 
 const environment = createTestEnvironment(
 	["PLANNOTATOR_REMOTE", "PLANNOTATOR_AGENT_TERMINAL_REMOTE", "PLANNOTATOR_PORT"],
