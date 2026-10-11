@@ -4,7 +4,6 @@ import type { WorkerInitializationRenderOptions, WorkerPoolOptions } from '@pier
 // Vite-inlined worker (base64 blob) — required by the single-file HTML build:
 // the review UI ships as one self-contained file, so there is no separate
 // asset URL to load a worker script from.
-// @ts-expect-error vite ?worker&inline virtual module (no ambient types here)
 import DiffsWorker from '@pierre/diffs/worker/worker.js?worker&inline';
 
 /**

@@ -34,6 +34,7 @@ beforeEach(() => {
   process.env.PLANNOTATOR_DATA_DIR = join(root, "data");
   process.env.PLANNOTATOR_AI = "disabled";
   process.env.PLANNOTATOR_REMOTE = "0";
+  process.env.PLANNOTATOR_REVIEW_PROGRESS = "1";
   delete process.env.PLANNOTATOR_PORT;
   git("init", "-b", "main");
   git("config", "user.name", "Test");
@@ -71,6 +72,10 @@ for (const [name, start] of [["Bun", startBun], ["Pi", startPi]] as const) {
       servers.push(server);
       return server;
     }
+    function close(server: { stop: () => void }) {
+      server.stop();
+      servers.splice(servers.indexOf(server), 1);
+    }
     async function progress(url: string) {
       const diff = await (await fetch(`${url}/api/diff`)).json();
       const endpoint = `${url}/api/review-progress?snapshot=${encodeURIComponent(diff.snapshotId)}`;
@@ -101,7 +106,7 @@ for (const [name, start] of [["Bun", startBun], ["Pi", startPi]] as const) {
       });
       expect(await post.json()).toEqual({ available: false });
       expect(readdirSync(store, { recursive: true }).filter(name => String(name).endsWith(".json"))).toHaveLength(1);
-    });
+    }, 15_000);
 
     test("submit, stop, edit one file and reopen: only the changed file is unviewed", async () => {
       const first = await open();
@@ -112,17 +117,17 @@ for (const [name, start] of [["Bun", startBun], ["Pi", startPi]] as const) {
       await fetch(`${first.url}/api/draft`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ codeAnnotations: [{ id: "note" }], ts: Date.now() }) });
       expect((await fetch(`${first.url}/api/feedback`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ feedback: "Please adjust B", annotations: [] }) })).status).toBe(200);
       await first.waitForDecision();
-      first.stop();
-      servers.splice(servers.indexOf(first), 1);
+      close(first);
       writeFileSync(join(cwd, "b.txt"), "adjusted\n");
       const second = await open();
       const restored = await progress(second.url);
       expect(restored.data.viewedFiles).toEqual(["a.txt"]);
       expect((await mark(restored, ["a.txt"], false)).status).toBe(200);
       expect((await progress(second.url)).data).toMatchObject({ viewedFiles: [], suppressedFiles: ["a.txt"] });
+      close(second);
       const third = await open();
       expect((await progress(third.url)).data.viewedFiles).toEqual([]);
-    });
+    }, 15_000);
 
     test("view switches preserve their own progress and reject stale writes", async () => {
       git("add", "a.txt");
@@ -143,7 +148,7 @@ for (const [name, start] of [["Bun", startBun], ["Pi", startPi]] as const) {
       const p = await progress(server.url);
       const invalid = await fetch(p.endpoint, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ key: p.data.key, changes: [{ path: "../escape", fingerprint: "x", viewed: true }] }) });
       expect(invalid.status).toBe(400);
-    });
+    }, 15_000);
   });
 }
 

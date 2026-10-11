@@ -2,7 +2,8 @@ import { useCallback, useEffect, useState } from 'react';
 import type { CallFlowResponse } from '@plannotator/shared/call-flow-types';
 
 export type CallFlowAnalysisState =
-  | { status: 'idle' | 'loading' }
+  | { status: 'idle' }
+  | { status: 'loading' }
   | { status: 'ready'; data: Extract<CallFlowResponse, { status: 'ok' }> }
   | { status: 'error'; error: Exclude<CallFlowResponse, { status: 'ok' }> | Error };
 

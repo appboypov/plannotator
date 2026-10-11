@@ -180,9 +180,9 @@ function parsePRContextStreamEvent(value: unknown): PRContextStreamEvent | null 
         version: value.version,
         context,
         loading: value.loading,
-        error: value.error,
+        error: typeof value.error === 'string' ? value.error : null,
         stale: value.stale,
-        ...(value.retryAt !== undefined ? { retryAt: value.retryAt } : {}),
+        ...(typeof value.retryAt === 'number' ? { retryAt: value.retryAt } : {}),
       };
     }
     case 'updated': {
@@ -208,7 +208,7 @@ function parsePRContextStreamEvent(value: unknown): PRContextStreamEvent | null 
         version: value.version,
         error: value.error,
         stale: value.stale,
-        ...(value.retryAt !== undefined ? { retryAt: value.retryAt } : {}),
+        ...(typeof value.retryAt === 'number' ? { retryAt: value.retryAt } : {}),
       };
     default:
       return null;

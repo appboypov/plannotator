@@ -490,7 +490,7 @@ export function useEditSession(params: UseEditSessionParams): EditSessionApi {
       }
       const hydrated = await ensureFullContent(itemId, file);
       if (fileSetKeyRef.current !== generation) return;
-      if (!hydrated.ok) {
+      if (hydrated.ok === false) {
         markUnavailable(file.path, hydrated.reason);
         refreshItem(itemId);
         return;

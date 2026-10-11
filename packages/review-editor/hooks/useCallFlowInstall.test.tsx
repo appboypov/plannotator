@@ -73,12 +73,12 @@ describe('useCallFlowInstall', () => {
   test.skipIf(!hasDom)('starts one install, polls only while running, and fires onInstalled on done', async () => {
     const requests: Array<{ url: string; method: string }> = [];
     let statusPayload: CallFlowInstallStatus = { state: 'running', stage: 'downloading', languageIds: ['javascript-typescript'] };
-    globalThis.fetch = async (input, init) => {
+    globalThis.fetch = Object.assign(async (input, init) => {
       const url = String(input);
       requests.push({ url, method: init?.method ?? 'GET' });
       if (url.includes('/api/call-flow/install-status')) return jsonResponse(statusPayload);
       return jsonResponse({ state: 'running', stage: 'downloading', languageIds: ['javascript-typescript'] });
-    };
+    }, { preconnect: () => {} });
 
     let installedCalls = 0;
     await render(async () => { installedCalls++; });
@@ -119,7 +119,7 @@ describe('useCallFlowInstall', () => {
 
   test.skipIf(!hasDom)('surfaces a failed start as error and retries with a fresh POST', async () => {
     let posts = 0;
-    globalThis.fetch = async (input, init) => {
+    globalThis.fetch = Object.assign(async (input, init) => {
       const url = String(input);
       if ((init?.method ?? 'GET') === 'POST') {
         posts++;
@@ -133,7 +133,7 @@ describe('useCallFlowInstall', () => {
         return jsonResponse({ state: 'done', languageIds: ['javascript-typescript'] });
       }
       return jsonResponse({ state: 'done', languageIds: ['javascript-typescript'] });
-    };
+    }, { preconnect: () => {} });
 
     let installedCalls = 0;
     await render(async () => { installedCalls++; });
@@ -149,7 +149,10 @@ describe('useCallFlowInstall', () => {
   });
 
   test.skipIf(!hasDom)('retries the read-only advert handoff after a transient failure', async () => {
-    globalThis.fetch = async () => jsonResponse({ state: 'done', languageIds: ['python'] });
+    globalThis.fetch = Object.assign(
+      async () => jsonResponse({ state: 'done', languageIds: ['python'] }),
+      { preconnect: () => {} },
+    );
     let reconciliations = 0;
     await render(async () => {
       reconciliations++;
@@ -164,7 +167,10 @@ describe('useCallFlowInstall', () => {
   });
 
   test.skipIf(!hasDom)('stops reconciliation after ten failures and exposes a quiet retry state', async () => {
-    globalThis.fetch = async () => jsonResponse({ state: 'done', languageIds: ['python'] });
+    globalThis.fetch = Object.assign(
+      async () => jsonResponse({ state: 'done', languageIds: ['python'] }),
+      { preconnect: () => {} },
+    );
     let reconciliations = 0;
     await render(async () => {
       reconciliations++;
@@ -180,7 +186,7 @@ describe('useCallFlowInstall', () => {
 
   test.skipIf(!hasDom)('keeps polling after a transient non-2xx status response', async () => {
     let polls = 0;
-    globalThis.fetch = async (input, init) => {
+    globalThis.fetch = Object.assign(async (input, init) => {
       if ((init?.method ?? 'GET') === 'POST') {
         return jsonResponse({ state: 'running', stage: 'downloading', languageIds: ['python'] });
       }
@@ -190,7 +196,7 @@ describe('useCallFlowInstall', () => {
         return jsonResponse({ state: 'done', languageIds: ['python'] });
       }
       return jsonResponse({ state: 'done', languageIds: ['python'] });
-    };
+    }, { preconnect: () => {} });
     let installedCalls = 0;
     await render(async () => { installedCalls++; });
     await clickInstall();

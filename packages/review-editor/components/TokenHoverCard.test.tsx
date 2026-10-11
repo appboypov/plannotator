@@ -230,10 +230,12 @@ describe.skipIf(!hasDom)('TokenHoverCard', () => {
   test('opens end to end from a hover answer, with no card before one arrives', async () => {
     const originalFetch = globalThis.fetch;
     let settle: ((data: CodeNavHoverResponse) => void) | null = null;
-    globalThis.fetch = (() =>
-      new Promise((resolve) => {
+    globalThis.fetch = Object.assign(
+      () => new Promise<Response>((resolve) => {
         settle = (data) => resolve(new Response(JSON.stringify(data)));
-      })) as typeof globalThis.fetch;
+      }),
+      { preconnect: () => {} },
+    );
     jest.useFakeTimers();
 
     let hover: ReturnType<typeof useTokenHover> | null = null;

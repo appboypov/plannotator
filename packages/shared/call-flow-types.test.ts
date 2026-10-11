@@ -115,6 +115,64 @@ describe("parseCallDiffWorkerResult", () => {
     })).toThrow("invalid node status");
   });
 
+  test.each([[null], [""], ["loop"], [0], [{}], [[]]])("rejects unsupported node kind %j", (kind) => {
+    expect(() => parseCallDiffWorkerResult({
+      protocol: 1,
+      ok: true,
+      version: "0.4.1",
+      result: {
+        from: "a",
+        to: "b",
+        ascii: "raw",
+        trees: [{
+          entry: "main",
+          tree: { key: "main", label: "main", status: "same", kind, children: [] },
+        }],
+      },
+    })).toThrow(Error);
+  });
+
+  test.each(["call", "branch", undefined])("preserves supported node kind %j", (kind) => {
+    const parsed = parseCallDiffWorkerResult({
+      protocol: 1,
+      ok: true,
+      version: "0.4.1",
+      result: {
+        from: "a",
+        to: "b",
+        ascii: "raw",
+        trees: [{
+          entry: "main",
+          tree: { key: "main", label: "main", status: "same", kind, children: [] },
+        }],
+      },
+    });
+    expect(parsed.trees[0].tree).toEqual({
+      key: "main", label: "main", status: "same", children: [],
+      ...(kind === undefined ? {} : { kind }),
+    });
+  });
+
+  test("rejects an unsupported descendant kind below a valid entry", () => {
+    expect(() => parseCallDiffWorkerResult({
+      protocol: 1,
+      ok: true,
+      version: "0.4.1",
+      result: {
+        from: "a",
+        to: "b",
+        ascii: "raw",
+        trees: [{
+          entry: "main",
+          tree: {
+            key: "main", label: "main", status: "same", kind: "call",
+            children: [{ key: "child", label: "child", status: "same", kind: "loop", children: [] }],
+          },
+        }],
+      },
+    })).toThrow(Error);
+  });
+
   test("rejects absolute and parent-traversing source locations", () => {
     const responseForFile = (file: string) => ({
       protocol: 1,

@@ -51,6 +51,9 @@ function parseLoneVideoLink(content: string): { url: string; label: string } | n
   return null;
 }
 
+/** Heading elements by level; deeper markdown headings render as the last. */
+const HEADING_TAGS = ['h1', 'h2', 'h3', 'h4', 'h5', 'h6'] as const;
+
 /** Render a simplified block-level markdown view (no annotation infrastructure). */
 export function MarkdownBody({ markdown, textClassName = 'text-xs' }: { markdown: string; textClassName?: string }) {
   const blocks = useMemo(() => parseMarkdownToBlocks(markdown), [markdown]);
@@ -60,7 +63,7 @@ export function MarkdownBody({ markdown, textClassName = 'text-xs' }: { markdown
       {blocks.map((block) => {
         switch (block.type) {
           case 'heading': {
-            const Tag = `h${Math.min(block.level ?? 1, 6)}` as keyof JSX.IntrinsicElements;
+            const Tag = HEADING_TAGS[Math.min(block.level ?? 1, HEADING_TAGS.length) - 1];
             const sizes: Record<number, string> = {
               1: 'text-base font-bold',
               2: 'text-sm font-semibold',

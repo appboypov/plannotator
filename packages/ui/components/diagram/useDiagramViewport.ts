@@ -73,19 +73,20 @@ export function useDiagramViewport(
       setViewport(IDENTITY);
       return;
     }
-    const rect = host.getBoundingClientRect();
-    if (rect.width <= 0 || rect.height <= 0) {
+    // Viewport transforms use local CSS coordinates, including in scaled previews.
+    const { clientWidth: width, clientHeight: height } = host;
+    if (width <= 0 || height <= 0) {
       // No layout (a hidden tab, happy-dom): identity until a size arrives.
       setViewport(IDENTITY);
       return;
     }
-    const availableWidth = Math.max(1, rect.width - FIT_PADDING_PX * 2);
-    const availableHeight = Math.max(1, rect.height - FIT_PADDING_PX * 2);
+    const availableWidth = Math.max(1, width - FIT_PADDING_PX * 2);
+    const availableHeight = Math.max(1, height - FIT_PADDING_PX * 2);
     const scale = clampScale(Math.min(availableWidth / size.width, availableHeight / size.height));
     adjustedRef.current = false;
     setViewport({
-      x: (rect.width - size.width * scale) / 2,
-      y: (rect.height - size.height * scale) / 2,
+      x: (width - size.width * scale) / 2,
+      y: (height - size.height * scale) / 2,
       scale,
     });
   }, [hostRef]);

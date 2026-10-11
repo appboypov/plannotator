@@ -285,7 +285,7 @@ type ReviewHistoryAction =
       afterSelection: string | null;
     };
 
-const reviewItemId = (item: { id: string }): string => item.id;
+const reviewItemId = <TItem extends { id: string }>(item: TItem): string => item.id;
 
 interface CompactReviewOverlayProps {
   title: string;

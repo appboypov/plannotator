@@ -59,10 +59,12 @@ describe.if(hasDom)('header control visibility (DOM)', () => {
   const originalFetch = globalThis.fetch;
 
   async function render(node: React.ReactElement) {
-    globalThis.fetch = (async () =>
-      new Response(JSON.stringify({ oldContent: null, newContent: null }), {
+    globalThis.fetch = Object.assign(
+      async () => new Response(JSON.stringify({ oldContent: null, newContent: null }), {
         headers: { 'content-type': 'application/json' },
-      })) as typeof fetch;
+      }),
+      { preconnect: () => {} },
+    );
 
     host = document.createElement('div');
     document.body.appendChild(host);

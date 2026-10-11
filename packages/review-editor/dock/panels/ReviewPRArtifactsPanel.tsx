@@ -24,7 +24,7 @@ import {
   type ArtifactProviderLocation,
   artifactContentProxyUrl,
   injectArtifactBaseUrl,
-  rewriteArtifactMarkdownReferences,
+  useArtifactMarkdownReferences,
   useRemoteArtifactDocument,
 } from './artifactDocument';
 import { PRArtifactGallery } from './PRArtifactGallery';
@@ -317,6 +317,7 @@ function AnnotatableMarkdownStage({
   onAskAI: React.ComponentProps<typeof CommentPopover>['onAskAI'];
 }): React.JSX.Element {
   const containerRef = useRef<HTMLDivElement>(null);
+  useArtifactMarkdownReferences(containerRef, artifactUrl, provider);
   const hook = useAnnotationHighlighter({
     containerRef,
     annotations,
@@ -327,9 +328,6 @@ function AnnotatableMarkdownStage({
   });
   const previousIdsRef = useRef<Set<string>>(new Set());
   useEffect(() => {
-    if (containerRef.current !== null) {
-      rewriteArtifactMarkdownReferences(containerRef.current, artifactUrl, provider);
-    }
     const ids = new Set(annotations.map((annotation) => annotation.id));
     for (const id of previousIdsRef.current) {
       if (!ids.has(id)) hook.removeHighlight(id);

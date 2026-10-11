@@ -70,7 +70,7 @@ export function CallFlowRawView({
   const [searchOpen, setSearchOpen] = useState(false);
   const [query, setQuery] = useState('');
   const [currentMatchIndex, setCurrentMatchIndex] = useState(0);
-  const copyResetTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const copyResetTimer = useRef<number | null>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
   const searchTriggerRef = useRef<HTMLButtonElement>(null);
   const selectSearchInputRef = useRef(false);
@@ -100,7 +100,7 @@ export function CallFlowRawView({
   }, [matches]);
 
   useEffect(() => () => {
-    if (copyResetTimer.current) clearTimeout(copyResetTimer.current);
+    if (copyResetTimer.current) window.clearTimeout(copyResetTimer.current);
   }, []);
 
   const openSearchFromShortcut = useCallback(() => {
@@ -167,7 +167,7 @@ export function CallFlowRawView({
   const copyRaw = async () => {
     const copied = await copyTextToClipboard(copyValue);
     setCopyState(copied ? 'copied' : 'error');
-    if (copyResetTimer.current) clearTimeout(copyResetTimer.current);
+    if (copyResetTimer.current) window.clearTimeout(copyResetTimer.current);
     copyResetTimer.current = window.setTimeout(() => setCopyState('idle'), 1500);
   };
   const selectTarget = (

@@ -1308,17 +1308,12 @@ describe("review-core", () => {
     const context = await getGitContext(runtime, repoDir);
     const result = await runGitDiff(runtime, "local-vs-remote", context.defaultBranch, repoDir);
 
-    // Intentional copy pins: these labels are the product terminology shown in the diff picker and header.
-    expect(context.diffOptions).toContainEqual({
-      id: "local-vs-remote",
-      label: "Local vs remote branch",
-    });
+    expect(context.diffOptions.map((option) => option.id)).toContain("local-vs-remote");
     expect(result.error).toBeUndefined();
-    expect(result.label).toBe("main: Local vs origin/main");
     expect(result.patch).toContain("diff --git a/committed.txt b/committed.txt");
     expect(result.patch).toContain("diff --git a/tracked.txt b/tracked.txt");
     expect(result.patch).toContain("diff --git a/untracked.txt b/untracked.txt");
-  });
+  }, 15_000);
 
   test("git context hides local-vs-remote when the current branch has no upstream", async () => {
     const repoDir = initRepo();

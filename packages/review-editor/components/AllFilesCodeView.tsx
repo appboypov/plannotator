@@ -9,7 +9,7 @@ import type {
   FileDiffMetadata,
   LineAnnotation,
   PostRenderPhase,
-  SelectedLineRange,
+  SelectedLineRange as PierreSelectedLineRange,
 } from '@pierre/diffs';
 import { CodeView, EditProvider, type CodeViewHandle, useStableCallback } from '@pierre/diffs/react';
 import type { DiffTokenEventBaseProps } from '@pierre/diffs';
@@ -19,6 +19,7 @@ import type {
   ConventionalDecoration,
   ConventionalLabel,
   DiffAnnotationMetadata,
+  SelectedLineRange,
   TokenAnnotationMeta,
 } from '@plannotator/ui/types';
 import { CommentPopover } from '@plannotator/ui/components/CommentPopover';
@@ -27,7 +28,7 @@ import { useIsWorkerPoolReadyOrDisabled, useWorkerPoolThemeSync } from '../worke
 import type { DiffFile, AnnotationScrollTarget } from '../types';
 import { buildFileTree, getVisualFileOrder } from '../utils/buildFileTree';
 import { buildCodeNavRequest } from '../utils/buildCodeNavRequest';
-import { getDiffSelection, getLineNumberFromNode, getSideFromNode } from '../utils/diffSelection';
+import { getDiffSelection, getLineNumberFromNode, getSideFromNode, toSelectedLineRange } from '../utils/diffSelection';
 import { isContentConsistentWithPatch } from '../utils/patchConsistency';
 import { hashString } from '../utils/hashString';
 import {
@@ -1895,7 +1896,7 @@ export const AllFilesCodeView: React.FC<AllFilesCodeViewProps> = ({
   const handleSelectedLinesChange = useStableCallback(
     (selection: CodeViewLineSelection | null) => {
       setSelectedLines(selection);
-      onLineSelection(selection ? selection.range : null);
+      onLineSelection(selection ? toSelectedLineRange(selection.range) : null);
     },
   );
 
@@ -1962,10 +1963,11 @@ export const AllFilesCodeView: React.FC<AllFilesCodeViewProps> = ({
   const handleLineSelectionInteraction = useStableCallback(
     (
       source: LineSelectionSource,
-      range: SelectedLineRange | null,
+      pierreRange: PierreSelectedLineRange | null,
       item: CodeViewItem<DiffAnnotationMetadata>,
     ) => {
-      if (range == null || item.type !== 'diff') return;
+      if (pierreRange == null || item.type !== 'diff') return;
+      const range = toSelectedLineRange(pierreRange);
       // The file being edited owns its pointer interactions — opening the
       // annotation toolbar over an active editor would fight its focus.
       if (item.id === editSession.editingItemIdRef.current) return;
@@ -1986,13 +1988,13 @@ export const AllFilesCodeView: React.FC<AllFilesCodeViewProps> = ({
   );
 
   const handleLineSelectionEnd = useStableCallback(
-    (range: SelectedLineRange | null, item: CodeViewItem<DiffAnnotationMetadata>) => {
+    (range: PierreSelectedLineRange | null, item: CodeViewItem<DiffAnnotationMetadata>) => {
       handleLineSelectionInteraction('range-gesture', range, item);
     },
   );
 
   const handleGutterUtilityClick = useStableCallback(
-    (range: SelectedLineRange, item: CodeViewItem<DiffAnnotationMetadata>) => {
+    (range: PierreSelectedLineRange, item: CodeViewItem<DiffAnnotationMetadata>) => {
       handleLineSelectionInteraction('gutter-comment-action', range, item);
     },
   );

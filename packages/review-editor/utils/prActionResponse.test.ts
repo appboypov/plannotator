@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test';
+import type { PRReviewSubmissionResult } from '@plannotator/shared/pr-types';
 import { parsePRActionSuccess, readPRActionError } from './prActionResponse';
 
 const failedComment = {
@@ -30,26 +31,24 @@ describe('parsePRActionSuccess', () => {
   });
 
   test('parses a mixed response with its exact retry contract', () => {
-    const response = {
-      ok: true,
-      submission: {
-        status: 'partial',
-        postedFileCommentCount: 1,
-        failedFileComments: [
-          {
-            comment: failedComment,
-            error: 'src/failing.ts:19: rejected',
-          },
-        ],
-        reviewBodyPosted: true,
-        approval: 'not-requested',
-        recoveryFile: '/tmp/plannotator/failed-comments/review.json',
-        retry: {
-          action: 'comment',
-          fileComments: [failedComment],
+    const submission: PRReviewSubmissionResult = {
+      status: 'partial',
+      postedFileCommentCount: 1,
+      failedFileComments: [
+        {
+          comment: failedComment,
+          error: 'src/failing.ts:19: rejected',
         },
+      ],
+      reviewBodyPosted: true,
+      approval: 'not-requested',
+      recoveryFile: '/tmp/plannotator/failed-comments/review.json',
+      retry: {
+        action: 'comment',
+        fileComments: [failedComment],
       },
     };
+    const response = { ok: true, submission };
 
     expect(parsePRActionSuccess(response)).toEqual({
       submission: response.submission,
@@ -93,7 +92,7 @@ describe('parsePRActionSuccess', () => {
   });
 
   test('accepts a failed Bitbucket request-changes decision as its own retry, not as approve', () => {
-    const submission = {
+    const submission: PRReviewSubmissionResult = {
       status: 'partial',
       postedFileCommentCount: 0,
       failedFileComments: [],

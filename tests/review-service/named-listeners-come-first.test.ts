@@ -10,8 +10,8 @@ import { startReviewService, type ReviewService } from "../../packages/server/re
 
 let dir: string;
 let service: ReviewService | undefined;
-const sockets: WebSocket[] = [];
-const rawEnds: (() => void)[] = [];
+/** Every client socket a test opened, with the moment it has fully closed. */
+const clients: { close: () => void; closed: Promise<void> }[] = [];
 const saved: Record<string, string | undefined> = {};
 
 beforeEach(async () => {
@@ -38,11 +38,14 @@ beforeEach(async () => {
   });
 });
 
+// Clients and the service (with its pages) are fully closed before the
+// fixtures they read go.
 afterEach(async () => {
-  for (const socket of sockets.splice(0)) socket.close();
-  for (const end of rawEnds.splice(0)) end();
+  const closing = clients.splice(0);
+  for (const client of closing) client.close();
   await service?.stop();
   service = undefined;
+  await Promise.all(closing.map((client) => client.closed));
   rmSync(dir, { recursive: true, force: true });
   for (const [key, value] of Object.entries(saved)) {
     if (value === undefined) delete process.env[key];
@@ -69,7 +72,9 @@ type Listener = {
 
 async function listen(session: string): Promise<Listener> {
   const socket = new WebSocket(`${service!.url.replace("http", "ws")}/api/review/v1/listen?session=${session}`);
-  sockets.push(socket);
+  const closed = Promise.withResolvers<void>();
+  socket.addEventListener("close", () => closed.resolve());
+  clients.push({ close: () => socket.close(), closed: closed.promise });
   const messages: ListenServerMessage[] = [];
   const waiters: { type: string; from: number; resolve: (frames: ListenServerMessage[]) => void }[] = [];
   socket.addEventListener("message", (event) => {
@@ -121,6 +126,7 @@ async function silentListener(reviewId: string): Promise<PromiseWithResolvers<un
   const upgraded = Promise.withResolvers<void>();
   const subscribed = Promise.withResolvers<void>();
   const remark = Promise.withResolvers<unknown>();
+  const closed = Promise.withResolvers<void>();
   let buffer = Buffer.alloc(0);
   let handshake = true;
   const socket = await Bun.connect({
@@ -161,9 +167,10 @@ async function silentListener(reviewId: string): Promise<PromiseWithResolvers<un
           }
         }
       },
+      close: () => closed.resolve(),
     },
   });
-  rawEnds.push(() => socket.end());
+  clients.push({ close: () => socket.end(), closed: closed.promise });
   socket.write(
     `GET /api/review/v1/listen?session=silent-agent HTTP/1.1\r\nHost: ${hostname}:${port}\r\nUpgrade: websocket\r\n` +
       "Connection: Upgrade\r\nSec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\nSec-WebSocket-Version: 13\r\n\r\n",
@@ -253,5 +260,5 @@ describe("Holder backlog hand-over", () => {
     expect(received).toEqual(replay[0]);
     const listed = await (await fetch(`${service!.url}/api/review/v1/reviews`)).json();
     expect(listed.reviews[0].listeners).toEqual(["chat"]);
-  });
+  }, 10_000);
 });

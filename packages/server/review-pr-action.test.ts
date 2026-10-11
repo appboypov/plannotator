@@ -1,18 +1,19 @@
 import { afterEach, describe, expect, test } from 'bun:test';
-import { mkdtempSync, rmSync } from 'node:fs';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
 import type {
   PRMetadata,
   PRReviewFileComment,
   PRReviewSubmissionResult,
 } from '@plannotator/shared/pr-types';
+import { createTestEnvironment } from '../../tests/helpers/environment';
 import { startReviewServer } from './review';
 
-const originalAI = process.env.PLANNOTATOR_AI;
-const originalDataDir = process.env.PLANNOTATOR_DATA_DIR;
-const originalPath = process.env.PATH;
-const tempDirs: string[] = [];
+const environment = createTestEnvironment(
+  ['PLANNOTATOR_AI', 'PLANNOTATOR_DATA_DIR', 'PLANNOTATOR_REMOTE', 'PLANNOTATOR_PORT', 'PATH'],
+  'plannotator-pr-action-',
+);
+const activeServers = new Set<{ stop: () => void }>();
+const pendingStarts = new Set<Promise<{ stop: () => void }>>();
+let fixtureController: AbortController | undefined;
 
 const prMetadata: PRMetadata = {
   platform: 'gitlab',
@@ -35,30 +36,38 @@ const fileComment: PRReviewFileComment = {
   body: 'Handle this failure.',
 };
 
-function makeTempDir(prefix: string): string {
-  const dir = mkdtempSync(join(tmpdir(), prefix));
-  tempDirs.push(dir);
-  return dir;
-}
-
 async function withReviewServer(
   submit: (...args: unknown[]) => Promise<PRReviewSubmissionResult>,
   run: (url: string) => Promise<void>,
 ): Promise<void> {
+  environment.reset();
   process.env.PLANNOTATOR_AI = 'disabled';
-  process.env.PLANNOTATOR_DATA_DIR = makeTempDir('plannotator-pr-action-data-');
-  process.env.PATH = makeTempDir('plannotator-pr-action-path-');
-  const server = await startReviewServer({
+  process.env.PLANNOTATOR_REMOTE = '0';
+  delete process.env.PLANNOTATOR_PORT;
+  process.env.PLANNOTATOR_DATA_DIR = environment.makeTempDir();
+  // An empty PATH: no platform CLI can run for the review session.
+  process.env.PATH = environment.makeTempDir();
+  const fixture = new AbortController();
+  fixtureController = fixture;
+  const startup = startReviewServer({
     rawPatch: 'diff --git a/src/failing.ts b/src/failing.ts\n',
     gitRef: 'MR !7',
     htmlContent: '<!doctype html><html><body>review</body></html>',
     prMetadata,
     prReviewSubmitter: async (...args) => submit(...args),
   });
+  pendingStarts.add(startup);
+  const server = await startup.finally(() => pendingStarts.delete(startup));
+  if (fixture.signal.aborted) {
+    server.stop();
+    throw new Error('Review fixture ended during server startup');
+  }
+  activeServers.add(server);
   try {
     await run(server.url);
   } finally {
     server.stop();
+    activeServers.delete(server);
   }
 }
 
@@ -74,16 +83,14 @@ async function postReview(url: string): Promise<Response> {
   });
 }
 
-afterEach(() => {
-  if (originalAI === undefined) delete process.env.PLANNOTATOR_AI;
-  else process.env.PLANNOTATOR_AI = originalAI;
-  if (originalDataDir === undefined) delete process.env.PLANNOTATOR_DATA_DIR;
-  else process.env.PLANNOTATOR_DATA_DIR = originalDataDir;
-  if (originalPath === undefined) delete process.env.PATH;
-  else process.env.PATH = originalPath;
-  for (const dir of tempDirs.splice(0)) {
-    rmSync(dir, { recursive: true, force: true });
-  }
+// A session still running when its test ends stops before the environment it
+// was started in is restored.
+afterEach(async () => {
+  fixtureController?.abort();
+  await Promise.allSettled(pendingStarts);
+  for (const server of activeServers) server.stop();
+  activeServers.clear();
+  environment.restore();
 });
 
 describe('Bun /api/pr-action submission contract', () => {

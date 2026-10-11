@@ -50,8 +50,8 @@ function parseFileComment(value: unknown): PRReviewFileComment | null {
     line: value.line,
     side: value.side,
     body: value.body,
-    ...(startLine !== undefined ? { start_line: startLine } : {}),
-    ...(startSide !== undefined ? { start_side: startSide } : {}),
+    ...(typeof startLine === 'number' ? { start_line: startLine } : {}),
+    ...(startSide === 'LEFT' || startSide === 'RIGHT' ? { start_side: startSide } : {}),
   };
 }
 

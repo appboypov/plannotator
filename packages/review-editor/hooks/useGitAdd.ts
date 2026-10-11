@@ -32,7 +32,7 @@ export function useGitAdd({ activeDiffBase, onFileViewed, sidecarStaged }: UseGi
   const [overrides, setOverrides] = useState<Map<string, boolean>>(new Map());
   const [stagingFile, setStagingFile] = useState<string | null>(null);
   const [stageError, setStageError] = useState<string | null>(null);
-  const errorTimeoutRef = useRef<ReturnType<typeof setTimeout>>();
+  const errorTimeoutRef = useRef<number | undefined>(undefined);
 
   const canStageFiles = STAGEABLE_DIFF_TYPES.has(activeDiffBase);
 
@@ -53,7 +53,7 @@ export function useGitAdd({ activeDiffBase, onFileViewed, sidecarStaged }: UseGi
     const isUndo = stagedFilesRef.current.has(filePath);
     setStagingFile(filePath);
     setStageError(null);
-    clearTimeout(errorTimeoutRef.current);
+    window.clearTimeout(errorTimeoutRef.current);
 
     try {
       const res = await fetch('/api/git-add', {
@@ -76,7 +76,7 @@ export function useGitAdd({ activeDiffBase, onFileViewed, sidecarStaged }: UseGi
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Git add failed';
       setStageError(message);
-      errorTimeoutRef.current = setTimeout(() => setStageError(null), 3000);
+      errorTimeoutRef.current = window.setTimeout(() => setStageError(null), 3000);
     } finally {
       setStagingFile(null);
     }
@@ -88,7 +88,7 @@ export function useGitAdd({ activeDiffBase, onFileViewed, sidecarStaged }: UseGi
   const resetStagedFiles = useCallback(() => {
     setOverrides(new Map());
     setStageError(null);
-    clearTimeout(errorTimeoutRef.current);
+    window.clearTimeout(errorTimeoutRef.current);
   }, []);
 
   return { stagedFiles, stagingFile, canStageFiles, stageFile, resetStagedFiles, stageError };

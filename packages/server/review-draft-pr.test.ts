@@ -5,15 +5,19 @@
  * Temp PLANNOTATOR_DATA_DIR per test; PATH emptied so no platform CLI runs.
  */
 import { afterEach, describe, expect, test } from 'bun:test';
-import { mkdtempSync, readdirSync, rmSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import type { PRMetadata } from '@plannotator/shared/pr-types';
+import { createTestEnvironment } from '../../tests/helpers/environment';
 import { startReviewServer } from './review';
 
-const ENV_KEYS = ['PLANNOTATOR_AI', 'PLANNOTATOR_DATA_DIR', 'PATH', 'PLANNOTATOR_PORT', 'PLANNOTATOR_REMOTE', 'PLANNOTATOR_BROWSER'] as const;
-const saved: Partial<Record<(typeof ENV_KEYS)[number], string | undefined>> = {};
-const tempDirs: string[] = [];
+const environment = createTestEnvironment(
+  ['PLANNOTATOR_AI', 'PLANNOTATOR_DATA_DIR', 'PATH', 'PLANNOTATOR_PORT', 'PLANNOTATOR_REMOTE', 'PLANNOTATOR_BROWSER'],
+  'plannotator-draft-pr-',
+);
+const activeServers = new Set<{ stop: () => void }>();
+const pendingStarts = new Set<Promise<{ stop: () => void }>>();
+let fixtureController = new AbortController();
 
 const prMetadata: PRMetadata = {
   platform: 'github',
@@ -33,30 +37,26 @@ const prMetadata: PRMetadata = {
 const PATCH_BEFORE_PUSH = 'diff --git a/src/a.ts b/src/a.ts\n--- a/src/a.ts\n+++ b/src/a.ts\n@@ -1 +1 @@\n-a\n+b\n';
 const PATCH_AFTER_PUSH = 'diff --git a/src/a.ts b/src/a.ts\n--- a/src/a.ts\n+++ b/src/a.ts\n@@ -1 +1 @@\n-a\n+c\n';
 
-function makeTempDir(prefix: string): string {
-  const dir = mkdtempSync(join(tmpdir(), prefix));
-  tempDirs.push(dir);
-  return dir;
-}
-
 function sandbox(): string {
-  for (const key of ENV_KEYS) saved[key] = process.env[key];
+  environment.reset();
+  fixtureController = new AbortController();
   process.env.PLANNOTATOR_AI = 'disabled';
   process.env.PLANNOTATOR_REMOTE = '0';
   process.env.PLANNOTATOR_BROWSER = '/usr/bin/true';
-  delete process.env.PLANNOTATOR_PORT;
-  process.env.PATH = makeTempDir('plannotator-draft-pr-path-');
-  const dataDir = makeTempDir('plannotator-draft-pr-data-');
+  process.env.PATH = environment.makeTempDir();
+  const dataDir = environment.makeTempDir();
   process.env.PLANNOTATOR_DATA_DIR = dataDir;
   return dataDir;
 }
 
-afterEach(() => {
-  for (const key of ENV_KEYS) {
-    if (saved[key] === undefined) delete process.env[key];
-    else process.env[key] = saved[key]!;
-  }
-  for (const dir of tempDirs.splice(0)) rmSync(dir, { recursive: true, force: true });
+// A session still running when its test ends stops before the environment it
+// was started in is restored.
+afterEach(async () => {
+  fixtureController.abort();
+  await Promise.allSettled(pendingStarts);
+  for (const server of activeServers) server.stop();
+  activeServers.clear();
+  environment.restore();
 });
 
 async function withSession(
@@ -64,16 +64,25 @@ async function withSession(
   pr: PRMetadata | undefined,
   run: (url: string) => Promise<void>,
 ): Promise<void> {
-  const server = await startReviewServer({
+  const fixture = fixtureController;
+  const startup = startReviewServer({
     rawPatch,
     gitRef: pr ? 'PR #42' : 'HEAD',
     htmlContent: '<!doctype html><html><body>review</body></html>',
     ...(pr ? { prMetadata: pr } : {}),
   });
+  pendingStarts.add(startup);
+  const server = await startup.finally(() => pendingStarts.delete(startup));
+  if (fixture.signal.aborted) {
+    server.stop();
+    throw new Error('Draft fixture ended during server startup');
+  }
+  activeServers.add(server);
   try {
     await run(server.url);
   } finally {
     server.stop();
+    activeServers.delete(server);
   }
 }
 
@@ -201,10 +210,12 @@ async function withSwitchableSession(
     prMetadata: pr,
     prFetcher: fakeFetcher as never,
   });
+  activeServers.add(server);
   try {
     await run(server.url);
   } finally {
     server.stop();
+    activeServers.delete(server);
   }
 }
 

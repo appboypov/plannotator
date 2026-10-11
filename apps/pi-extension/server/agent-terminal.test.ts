@@ -1,8 +1,20 @@
-import { describe, expect, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { createServer } from "node:http";
 import { AGENT_TERMINAL_WS_BASE_PATH } from "../generated/agent-terminal.ts";
 import { createNodeAgentTerminalBridge, normalizeSpawnOptions } from "./agent-terminal.ts";
 import { startAnnotateServer } from "./serverAnnotate.ts";
+import { createTestEnvironment } from "../../../tests/helpers/environment.ts";
+
+const environment = createTestEnvironment(
+	["PLANNOTATOR_REMOTE", "PLANNOTATOR_AGENT_TERMINAL_REMOTE", "PLANNOTATOR_PORT"],
+	"plannotator-pi-agent-terminal-",
+);
+beforeEach(() => {
+	environment.reset();
+	process.env.PLANNOTATOR_REMOTE = "0";
+	delete process.env.PLANNOTATOR_PORT;
+});
+afterEach(() => environment.restore());
 
 describe("pi annotate agent terminal capability", () => {
 	test("normalizes spawn options from the server-owned agent launch plan", () => {
@@ -53,8 +65,6 @@ describe("pi annotate agent terminal capability", () => {
 	});
 
 	test("reports disabled capability in remote mode without terminal opt-in", async () => {
-		const previousRemote = process.env.PLANNOTATOR_REMOTE;
-		const previousAgentRemote = process.env.PLANNOTATOR_AGENT_TERMINAL_REMOTE;
 		process.env.PLANNOTATOR_REMOTE = "1";
 		delete process.env.PLANNOTATOR_AGENT_TERMINAL_REMOTE;
 		const httpServer = createServer();
@@ -73,14 +83,39 @@ describe("pi annotate agent terminal capability", () => {
 			bridge.dispose();
 		} finally {
 			httpServer.close();
-			if (previousRemote === undefined) delete process.env.PLANNOTATOR_REMOTE;
-			else process.env.PLANNOTATOR_REMOTE = previousRemote;
-			if (previousAgentRemote === undefined) delete process.env.PLANNOTATOR_AGENT_TERMINAL_REMOTE;
-			else process.env.PLANNOTATOR_AGENT_TERMINAL_REMOTE = previousAgentRemote;
+		}
+	});
+
+	test("allows remote terminals only with explicit opt-in on their capability path", async () => {
+		process.env.PLANNOTATOR_REMOTE = "1";
+		process.env.PLANNOTATOR_AGENT_TERMINAL_REMOTE = "1";
+		const httpServer = createServer();
+		const bridge = await createNodeAgentTerminalBridge({
+			enabled: true,
+			cwd: "/tmp/plannotator-agent-cwd",
+			server: httpServer,
+		});
+		try {
+			expect(bridge.capability.enabled).toBe(true);
+			if (!bridge.capability.enabled) throw new Error("Missing terminal capability");
+			await new Promise<void>((resolve) => httpServer.listen(0, "127.0.0.1", resolve));
+			const address = httpServer.address();
+			if (!address || typeof address === "string") throw new Error("Missing server address");
+			const message = await websocketRoundTrip(
+				`ws://127.0.0.1:${address.port}${bridge.capability.wsPath}`,
+				{ type: "spawn", requestId: "remote-missing-agent", options: {} },
+			);
+			expect(JSON.parse(message)).toMatchObject({
+				type: "error", requestId: "remote-missing-agent",
+			});
+		} finally {
+			bridge.dispose();
+			httpServer.close();
 		}
 	});
 
 	test("annotate mode mirrors the same-port WebSocket capability", async () => {
+		process.env.PLANNOTATOR_REMOTE = "0";
 		const server = await startAnnotateServer({
 			markdown: "# Annotate",
 			filePath: "doc.md",

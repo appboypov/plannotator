@@ -111,10 +111,12 @@ describe.if(hasDom)('contentless binary card presentation (DOM)', () => {
 
   async function render(patch: string, filePath: string) {
     // There is no expandable content for these shapes; keep the lookup inert.
-    globalThis.fetch = (async () =>
-      new Response(JSON.stringify({ oldContent: null, newContent: null }), {
+    globalThis.fetch = Object.assign(
+      async () => new Response(JSON.stringify({ oldContent: null, newContent: null }), {
         headers: { 'content-type': 'application/json' },
-      })) as typeof fetch;
+      }),
+      { preconnect: () => {} },
+    );
 
     host = document.createElement('div');
     document.body.appendChild(host);

@@ -400,6 +400,7 @@ export function prepareGitCommand(
       ...environment,
       ...configEnv,
       GIT_TERMINAL_PROMPT: "0",
+      GIT_ASKPASS: "",
       GIT_SSH_COMMAND: `${sshCommand} ${sshBatchOptions}`,
       SSH_ASKPASS_REQUIRE: "never",
     },

@@ -102,10 +102,12 @@ describe.if(hasDom)('oversized-file stub presentation (DOM)', () => {
 
   async function render(patch: string, filePath: string) {
     // No expandable content for a stub; keep the lookup inert either way.
-    globalThis.fetch = (async () =>
-      new Response(JSON.stringify({ oldContent: null, newContent: null }), {
+    globalThis.fetch = Object.assign(
+      async () => new Response(JSON.stringify({ oldContent: null, newContent: null }), {
         headers: { 'content-type': 'application/json' },
-      })) as typeof fetch;
+      }),
+      { preconnect: () => {} },
+    );
 
     host = document.createElement('div');
     document.body.appendChild(host);

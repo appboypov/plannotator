@@ -105,10 +105,10 @@ afterEach(async () => {
 describe('useCallFlowAutoInstall', () => {
   test.skipIf(!hasDom)('starts each target once per review session across toggle cycles', async () => {
     const bodies: unknown[] = [];
-    globalThis.fetch = async (_input, init) => {
+    globalThis.fetch = Object.assign(async (_input, init) => {
       bodies.push(JSON.parse(String(init?.body)));
       return jsonResponse({ state: 'done', languageIds: ['javascript-typescript'] });
-    };
+    }, { preconnect: () => {} });
     const onInstalled = async () => {};
     const plan = advert(['javascript-typescript']);
 
@@ -127,10 +127,10 @@ describe('useCallFlowAutoInstall', () => {
 
   test.skipIf(!hasDom)('waits for the updated consent dialog acknowledgment', async () => {
     const bodies: unknown[] = [];
-    globalThis.fetch = async (_input, init) => {
+    globalThis.fetch = Object.assign(async (_input, init) => {
       bodies.push(JSON.parse(String(init?.body)));
       return jsonResponse({ state: 'done', languageIds: ['python'] });
-    };
+    }, { preconnect: () => {} });
     const plan = advert(['python']);
 
     await render(true, plan, async () => {}, false);
@@ -145,11 +145,11 @@ describe('useCallFlowAutoInstall', () => {
   test.skipIf(!hasDom)('installs a newly required language and reconciles analysis in session', async () => {
     const bodies: unknown[] = [];
     let reconciliations = 0;
-    globalThis.fetch = async (_input, init) => {
+    globalThis.fetch = Object.assign(async (_input, init) => {
       const body = JSON.parse(String(init?.body)) as { languageIds: CallFlowLanguageId[] };
       bodies.push(body);
       return jsonResponse({ state: 'done', languageIds: body.languageIds });
-    };
+    }, { preconnect: () => {} });
     const onInstalled = async () => { reconciliations++; };
 
     await render(true, advert(['python']), onInstalled);
@@ -165,10 +165,10 @@ describe('useCallFlowAutoInstall', () => {
 
   test.skipIf(!hasDom)('does not loop after failure and retries only on explicit action', async () => {
     let posts = 0;
-    globalThis.fetch = async () => {
+    globalThis.fetch = Object.assign(async () => {
       posts++;
       return jsonResponse({ state: 'error', error: 'offline', languageIds: ['python'] });
-    };
+    }, { preconnect: () => {} });
     const plan = advert(['python']);
     const onInstalled = async () => {};
 
@@ -187,13 +187,13 @@ describe('useCallFlowAutoInstall', () => {
 
   test.skipIf(!hasDom)('attempts a newly required target after an earlier target fails', async () => {
     const bodies: Array<{ languageIds: CallFlowLanguageId[] }> = [];
-    globalThis.fetch = async (_input, init) => {
+    globalThis.fetch = Object.assign(async (_input, init) => {
       const body = JSON.parse(String(init?.body)) as { languageIds: CallFlowLanguageId[] };
       bodies.push(body);
       return jsonResponse(body.languageIds.includes('python')
         ? { state: 'error', error: 'Python install failed.', languageIds: body.languageIds, currentLanguageId: 'python' }
         : { state: 'done', languageIds: body.languageIds });
-    };
+    }, { preconnect: () => {} });
 
     await render(true, advert(['python']), async () => {});
     await waitFor(() => host?.querySelector('[data-state]')?.textContent === 'error', 'Python failure');
@@ -210,13 +210,13 @@ describe('useCallFlowAutoInstall', () => {
 
   test.skipIf(!hasDom)('filters a failed target out of a mixed plan and starts only the new target', async () => {
     const bodies: Array<{ languageIds: CallFlowLanguageId[] }> = [];
-    globalThis.fetch = async (_input, init) => {
+    globalThis.fetch = Object.assign(async (_input, init) => {
       const body = JSON.parse(String(init?.body)) as { languageIds: CallFlowLanguageId[] };
       bodies.push(body);
       return jsonResponse(body.languageIds.includes('python')
         ? { state: 'error', error: 'Python install failed.', languageIds: body.languageIds, currentLanguageId: 'python' }
         : { state: 'done', languageIds: body.languageIds });
-    };
+    }, { preconnect: () => {} });
 
     await render(true, advert(['python']), async () => {});
     await waitFor(() => host?.querySelector('[data-state]')?.textContent === 'error', 'Python failure');
@@ -231,7 +231,7 @@ describe('useCallFlowAutoInstall', () => {
 
   test.skipIf(!hasDom)('gives a queued target its own attempt when an earlier pack in the flight fails', async () => {
     const bodies: Array<{ languageIds: CallFlowLanguageId[] }> = [];
-    globalThis.fetch = async (_input, init) => {
+    globalThis.fetch = Object.assign(async (_input, init) => {
       const body = JSON.parse(String(init?.body)) as { languageIds: CallFlowLanguageId[] };
       bodies.push(body);
       return jsonResponse(body.languageIds.includes('python')
@@ -242,7 +242,7 @@ describe('useCallFlowAutoInstall', () => {
             currentLanguageId: 'python',
           }
         : { state: 'done', languageIds: body.languageIds });
-    };
+    }, { preconnect: () => {} });
 
     await render(true, advert(['python', 'go']), async () => {});
     await waitFor(() => bodies.length === 2, 'queued Go attempt');
@@ -254,10 +254,10 @@ describe('useCallFlowAutoInstall', () => {
 
   test.skipIf(!hasDom)('never installs for an override or other unmanaged runtime', async () => {
     let posts = 0;
-    globalThis.fetch = async () => {
+    globalThis.fetch = Object.assign(async () => {
       posts++;
       return jsonResponse({ state: 'done', languageIds: ['python'] });
-    };
+    }, { preconnect: () => {} });
     await render(true, advert(['python'], { installable: false }), async () => {});
     await act(async () => { await Bun.sleep(30); });
     expect(posts).toBe(0);
