@@ -1,8 +1,16 @@
-import { describe, expect, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { createServer } from "node:http";
 import { AGENT_TERMINAL_WS_BASE_PATH } from "../generated/agent-terminal.ts";
 import { createNodeAgentTerminalBridge, normalizeSpawnOptions } from "./agent-terminal.ts";
 import { startAnnotateServer } from "./serverAnnotate.ts";
+import { createTestEnvironment } from "../../../tests/helpers/environment";
+
+const environment = createTestEnvironment(
+	["PLANNOTATOR_REMOTE", "PLANNOTATOR_AGENT_TERMINAL_REMOTE"],
+	"plannotator-pi-agent-terminal-",
+);
+beforeEach(() => environment.reset());
+afterEach(() => environment.restore());
 
 describe("pi annotate agent terminal capability", () => {
 	test("normalizes spawn options from the server-owned agent launch plan", () => {
@@ -81,6 +89,7 @@ describe("pi annotate agent terminal capability", () => {
 	});
 
 	test("annotate mode mirrors the same-port WebSocket capability", async () => {
+		process.env.PLANNOTATOR_REMOTE = "0";
 		const server = await startAnnotateServer({
 			markdown: "# Annotate",
 			filePath: "doc.md",
