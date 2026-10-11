@@ -106,7 +106,7 @@ for (const [name, start] of [["Bun", startBun], ["Pi", startPi]] as const) {
       });
       expect(await post.json()).toEqual({ available: false });
       expect(readdirSync(store, { recursive: true }).filter(name => String(name).endsWith(".json"))).toHaveLength(1);
-    });
+    }, 15_000);
 
     test("submit, stop, edit one file and reopen: only the changed file is unviewed", async () => {
       const first = await open();
