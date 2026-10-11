@@ -75,8 +75,8 @@ function makeMockSem(dir: string, options: {
   writeFileSync(
     semPath,
     [
-      "#!/usr/bin/env bash",
-      "set -euo pipefail",
+      "#!/bin/sh",
+      "set -eu",
       'if [ "${1:-}" = "--version" ]; then',
       ...(options.versionCounterPath ? [`  printf x >> ${JSON.stringify(options.versionCounterPath)}`] : []),
       '  echo "sem 0.8.0"',
