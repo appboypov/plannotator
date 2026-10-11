@@ -649,9 +649,11 @@ describe("CallFlowService", () => {
       version: "0.4.1",
     };
     const service = new CallFlowService({ resolveRuntime: async () => ({ ok: true, runtime: fakeRuntime }) });
+    workerServices.push(service);
+    AbortSignal.timeout(10_000).addEventListener("abort", () => service.cancelAll(), { once: true });
     const result = await service.analyze({ ...input(), rawPatch });
     expect(result).toMatchObject({ status: "unavailable", reason: "missing-grammar" });
-  });
+  }, 15_000);
 });
 
 describe("managed CallDiff runtime", () => {

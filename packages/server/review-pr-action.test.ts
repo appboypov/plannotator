@@ -8,10 +8,12 @@ import { createTestEnvironment } from '../../tests/helpers/environment';
 import { startReviewServer } from './review';
 
 const environment = createTestEnvironment(
-  ['PLANNOTATOR_AI', 'PLANNOTATOR_DATA_DIR', 'PATH'],
+  ['PLANNOTATOR_AI', 'PLANNOTATOR_DATA_DIR', 'PLANNOTATOR_REMOTE', 'PLANNOTATOR_PORT', 'PATH'],
   'plannotator-pr-action-',
 );
 const activeServers = new Set<{ stop: () => void }>();
+const pendingStarts = new Set<Promise<{ stop: () => void }>>();
+let fixtureController: AbortController | undefined;
 
 const prMetadata: PRMetadata = {
   platform: 'gitlab',
@@ -40,16 +42,26 @@ async function withReviewServer(
 ): Promise<void> {
   environment.reset();
   process.env.PLANNOTATOR_AI = 'disabled';
+  process.env.PLANNOTATOR_REMOTE = '0';
+  delete process.env.PLANNOTATOR_PORT;
   process.env.PLANNOTATOR_DATA_DIR = environment.makeTempDir();
   // An empty PATH: no platform CLI can run for the review session.
   process.env.PATH = environment.makeTempDir();
-  const server = await startReviewServer({
+  const fixture = new AbortController();
+  fixtureController = fixture;
+  const startup = startReviewServer({
     rawPatch: 'diff --git a/src/failing.ts b/src/failing.ts\n',
     gitRef: 'MR !7',
     htmlContent: '<!doctype html><html><body>review</body></html>',
     prMetadata,
     prReviewSubmitter: async (...args) => submit(...args),
   });
+  pendingStarts.add(startup);
+  const server = await startup.finally(() => pendingStarts.delete(startup));
+  if (fixture.signal.aborted) {
+    server.stop();
+    throw new Error('Review fixture ended during server startup');
+  }
   activeServers.add(server);
   try {
     await run(server.url);
@@ -73,7 +85,9 @@ async function postReview(url: string): Promise<Response> {
 
 // A session still running when its test ends stops before the environment it
 // was started in is restored.
-afterEach(() => {
+afterEach(async () => {
+  fixtureController?.abort();
+  await Promise.allSettled(pendingStarts);
   for (const server of activeServers) server.stop();
   activeServers.clear();
   environment.restore();

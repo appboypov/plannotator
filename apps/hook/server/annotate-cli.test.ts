@@ -55,7 +55,7 @@ function runAnnotate(args: string[], envOverrides: Record<string, string> = {}):
       timeout: CLI_TIMEOUT_MS,
     },
   );
-  if (result.exitCode === null) {
+  if (result.exitedDueToTimeout || result.signalCode) {
     const reason = result.exitedDueToTimeout ? `its ${CLI_TIMEOUT_MS}ms limit` : result.signalCode;
     throw new Error(`plannotator annotate ${args.join(" ")} was stopped by ${reason}`);
   }
@@ -174,14 +174,14 @@ describe("annotate CLI --tailscale publish failure exit codes", () => {
     expect(result.stderr).toContain("--tailscale");
     expect(result.stdout).toBe("");
     expect(existsSync(join(fixtureDir, resultFile))).toBe(false);
-  });
+  }, CASE_TIMEOUT_MS);
 
   testUnix("non-strict: keeps the documented exit 1", () => {
     const result = runAnnotate(["notes.md", "--tailscale"], tailscaleEnv());
     expect(result.exitCode).toBe(1);
     expect(result.stderr).toContain("--tailscale");
     expect(result.stdout).toBe("");
-  });
+  }, CASE_TIMEOUT_MS);
 });
 
 describe("annotate CLI tolerant tiers", () => {
@@ -191,7 +191,7 @@ describe("annotate CLI tolerant tiers", () => {
     expect(result.stdout).toContain("Could not resolve the arguments below");
     expect(result.stdout).toContain("the aim doc");
     expect(result.stdout).toContain("If you are an agent reading this");
-  });
+  }, CASE_TIMEOUT_MS);
 
   test("an unrecognized flag disables tolerance and errors like base", () => {
     // --no-jna is a typo'd --no-jina; skipping it would silently fetch the
@@ -200,7 +200,7 @@ describe("annotate CLI tolerant tiers", () => {
     expect(result.exitCode).toBe(1);
     expect(result.stderr).toContain("File not found: --no-jna");
     expect(result.stdout).toBe("");
-  });
+  }, CASE_TIMEOUT_MS);
 
   test("a quoted missing path is never re-split into a resolving token", () => {
     // notes.md exists; "my notes.md" (one argv token) does not. Token
@@ -210,7 +210,7 @@ describe("annotate CLI tolerant tiers", () => {
     expect(result.exitCode).toBe(0);
     expect(result.stdout).toContain("Could not resolve the arguments below");
     expect(result.stdout).toContain("my notes.md runme");
-  });
+  }, CASE_TIMEOUT_MS);
 
   test("a stray word matching a directory cannot hijack the fast path", () => {
     // "." is a real directory; in multi-token mode bare directory names are
@@ -218,7 +218,7 @@ describe("annotate CLI tolerant tiers", () => {
     const result = runAnnotate(["please", "annotate", "."]);
     expect(result.exitCode).toBe(0);
     expect(result.stdout).toContain("Could not resolve the arguments below");
-  });
+  }, CASE_TIMEOUT_MS);
 });
 
 describe("plannotator annotate: live app remote hard-off (CLI layer)", () => {

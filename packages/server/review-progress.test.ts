@@ -34,6 +34,7 @@ beforeEach(() => {
   process.env.PLANNOTATOR_DATA_DIR = join(root, "data");
   process.env.PLANNOTATOR_AI = "disabled";
   process.env.PLANNOTATOR_REMOTE = "0";
+  process.env.PLANNOTATOR_REVIEW_PROGRESS = "1";
   delete process.env.PLANNOTATOR_PORT;
   git("init", "-b", "main");
   git("config", "user.name", "Test");

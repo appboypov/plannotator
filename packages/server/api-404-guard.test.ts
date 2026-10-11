@@ -35,6 +35,8 @@ let archivePath = "";
 // none depends on (or touches) the real ~/.plannotator of whoever runs the tests.
 const environment = createTestEnvironment(["PLANNOTATOR_DATA_DIR"], "plannotator-api-404-data-");
 const runningServers: RunningServer[] = [];
+const pendingStarts = new Set<Promise<RunningServer>>();
+let fixtureController = new AbortController();
 
 interface RunningServer {
   readonly url: string;
@@ -197,9 +199,16 @@ async function startOnRandomLocalPort(
   const previousRemote = process.env.PLANNOTATOR_REMOTE;
   delete process.env.PLANNOTATOR_PORT;
   process.env.PLANNOTATOR_REMOTE = "0";
+  const fixture = fixtureController;
 
   try {
-    const server = await start();
+    const startup = start();
+    pendingStarts.add(startup);
+    const server = await startup.finally(() => pendingStarts.delete(startup));
+    if (fixture.signal.aborted) {
+      server.stop();
+      throw new Error('API fixture ended during server startup');
+    }
     runningServers.push(server);
     return server;
   } finally {
@@ -227,12 +236,15 @@ describe("API route 404 guards", () => {
 
   beforeEach(() => {
     environment.reset();
+    fixtureController = new AbortController();
     process.env.PLANNOTATOR_DATA_DIR = environment.makeTempDir();
   });
 
   // Servers stop before their data dir goes, so no late request reads or
   // writes config after the case ends.
-  afterEach(() => {
+  afterEach(async () => {
+    fixtureController.abort();
+    await Promise.allSettled(pendingStarts);
     for (const server of runningServers.splice(0)) server.stop();
     environment.restore();
   });

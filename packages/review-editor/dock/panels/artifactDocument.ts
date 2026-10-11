@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type RefObject } from 'react';
 
 /** Loading state for a remote HTML or Markdown artifact. */
 export type RemoteArtifactDocumentState =
@@ -325,6 +325,24 @@ export function rewriteArtifactMarkdownReferences(
     link.target = '_blank';
     link.rel = 'noopener noreferrer';
   }
+}
+
+export function useArtifactMarkdownReferences(
+  rootRef: RefObject<HTMLElement | null>,
+  artifactUrl: string,
+  provider: ArtifactProviderLocation,
+  enabled = true,
+): void {
+  useEffect(() => {
+    const root = rootRef.current;
+    if (!enabled || root === null) return;
+    const rewrite = () => rewriteArtifactMarkdownReferences(root, artifactUrl, provider);
+    rewrite();
+    // Diagram SVG arrives asynchronously and is replaced on each rerender.
+    const observer = new MutationObserver(rewrite);
+    observer.observe(root, { childList: true, subtree: true });
+    return () => observer.disconnect();
+  }, [rootRef, artifactUrl, provider, enabled]);
 }
 
 function decodeHtmlAttributeValue(value: string): string {

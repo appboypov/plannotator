@@ -6,10 +6,14 @@ import { startAnnotateServer } from "./serverAnnotate.ts";
 import { createTestEnvironment } from "../../../tests/helpers/environment";
 
 const environment = createTestEnvironment(
-	["PLANNOTATOR_REMOTE", "PLANNOTATOR_AGENT_TERMINAL_REMOTE"],
+	["PLANNOTATOR_REMOTE", "PLANNOTATOR_AGENT_TERMINAL_REMOTE", "PLANNOTATOR_PORT"],
 	"plannotator-pi-agent-terminal-",
 );
-beforeEach(() => environment.reset());
+beforeEach(() => {
+	environment.reset();
+	process.env.PLANNOTATOR_REMOTE = "0";
+	delete process.env.PLANNOTATOR_PORT;
+});
 afterEach(() => environment.restore());
 
 describe("pi annotate agent terminal capability", () => {
@@ -78,6 +82,34 @@ describe("pi annotate agent terminal capability", () => {
 			});
 			bridge.dispose();
 		} finally {
+			httpServer.close();
+		}
+	});
+
+	test("allows remote terminals only with explicit opt-in on their capability path", async () => {
+		process.env.PLANNOTATOR_REMOTE = "1";
+		process.env.PLANNOTATOR_AGENT_TERMINAL_REMOTE = "1";
+		const httpServer = createServer();
+		const bridge = await createNodeAgentTerminalBridge({
+			enabled: true,
+			cwd: "/tmp/plannotator-agent-cwd",
+			server: httpServer,
+		});
+		try {
+			expect(bridge.capability.enabled).toBe(true);
+			if (!bridge.capability.enabled) throw new Error("Missing terminal capability");
+			await new Promise<void>((resolve) => httpServer.listen(0, "127.0.0.1", resolve));
+			const address = httpServer.address();
+			if (!address || typeof address === "string") throw new Error("Missing server address");
+			const message = await websocketRoundTrip(
+				`ws://127.0.0.1:${address.port}${bridge.capability.wsPath}`,
+				{ type: "spawn", requestId: "remote-missing-agent", options: {} },
+			);
+			expect(JSON.parse(message)).toMatchObject({
+				type: "error", requestId: "remote-missing-agent",
+			});
+		} finally {
+			bridge.dispose();
 			httpServer.close();
 		}
 	});

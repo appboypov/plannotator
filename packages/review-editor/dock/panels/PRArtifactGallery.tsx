@@ -6,7 +6,7 @@ import {
   type ArtifactProviderLocation,
   artifactContentProxyUrl,
   injectArtifactBaseUrl,
-  rewriteArtifactMarkdownReferences,
+  useArtifactMarkdownReferences,
   useRemoteArtifactDocument,
 } from './artifactDocument';
 import { PRArtifactIcon } from './PRArtifactIcon';
@@ -42,11 +42,10 @@ function DocumentPreview({
   }, []);
 
   const state = useRemoteArtifactDocument(artifact.url, isNearViewport);
-  useEffect(() => {
-    if (state.status === 'ready' && artifact.kind === 'markdown' && markdownRef.current !== null) {
-      rewriteArtifactMarkdownReferences(markdownRef.current, artifact.url, provider);
-    }
-  }, [artifact.kind, artifact.url, provider, state]);
+  useArtifactMarkdownReferences(
+    markdownRef, artifact.url, provider,
+    state.status === 'ready' && artifact.kind === 'markdown',
+  );
 
   if (state.status !== 'ready') {
     return (

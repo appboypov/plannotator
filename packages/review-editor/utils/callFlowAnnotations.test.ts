@@ -28,7 +28,7 @@ const step: Pick<CallFlowAnnotationTarget, 'treePath' | 'entry' | 'label' | 'sid
 
 function target(
   overrides: { treePath?: string; lineStart?: number; lineEnd?: number } = {},
-): CallFlowAnnotationTarget {
+): Extract<CallFlowAnnotationTarget, { lineStart: number }> {
   return {
     ...step,
     filePath: 'src/flow.ts',
@@ -63,6 +63,25 @@ describe('resolveCallFlowAnnotationPlacement', () => {
     ], files);
     expect(placement).toMatchObject({ scope: 'line', lineStart: 12 });
     expect(placement?.targets.map((candidate) => candidate.treePath)).toEqual(['outside', 'inside']);
+  });
+
+  test('re-anchors old and current paths without losing selected target ranges', () => {
+    const renamedFiles: DiffFile[] = [{ ...files[0], oldPath: 'src/prior-flow.ts', status: 'renamed' }];
+    const outside: CallFlowAnnotationTarget = {
+      ...target({ treePath: 'outside', lineStart: 200, lineEnd: 200 }),
+      filePath: 'src/prior-flow.ts',
+    };
+    const inside = target({ treePath: 'inside' });
+    const placement = resolveCallFlowAnnotationPlacement([outside, inside], renamedFiles);
+    expect(placement).toMatchObject({
+      scope: 'line', filePath: 'src/flow.ts', lineStart: 12, lineEnd: 12, side: 'new',
+    });
+    expect(placement?.targets).toEqual([{ ...outside, filePath: 'src/flow.ts' }, inside]);
+    expect(resolveCallFlowAnnotationPlacement([
+      { ...inside, filePath: 'src/prior-flow.ts' },
+    ], renamedFiles)).toMatchObject({
+      scope: 'line', filePath: 'src/flow.ts', lineStart: 12, lineEnd: 12, side: 'new',
+    });
   });
 
   test('keeps a source-less structural step as review-scoped feedback', () => {

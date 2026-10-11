@@ -72,8 +72,7 @@ function installDelayedStatusGitWrapper(wrapperDir: string, signalPath: string):
 			"}",
 			"if (args.includes('status')) {",
 			"  writeFileSync(signal, 'done');",
-			"  const started = Date.now();",
-			"  while (!existsSync(release) && Date.now() - started < 2000) {",
+			"  while (!existsSync(release)) {",
 			"    await Bun.sleep(10);",
 			"  }",
 			"}",
@@ -323,7 +322,7 @@ describe("workspace status", () => {
 		const wrapperDir = makeTempDir("plannotator-git-timeout-");
 		const markerPath = join(wrapperDir, "status-hung");
 		installHangingOnceStatusGitWrapper(wrapperDir, markerPath);
-		process.env.PLANNOTATOR_GIT_TIMEOUT_MS = "1000";
+		process.env.PLANNOTATOR_GIT_TIMEOUT_MS = String(WRAPPER_STARTUP_TIMEOUT_MS);
 
 		const timedOut = getWorkspaceStatusForDirectory(docs);
 		try {
@@ -337,9 +336,9 @@ describe("workspace status", () => {
 			expect(retried.available).toBe(true);
 			expect(retried.totals.files).toBe(0);
 		} finally {
-			// The hung wrapper exits before PATH is restored.
+			// Release the wrapper if the request returned before its status started.
 			writeFileSync(`${markerPath}.release`, "go");
 			await timedOut;
 		}
-	}, 10_000);
+	}, 20_000);
 });
