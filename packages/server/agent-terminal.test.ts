@@ -130,6 +130,7 @@ export function createNodePtyWebSocketServer(options) {
   });
 
   test("loads WebTUI and reports browser-safe capability metadata", async () => {
+    process.env.PLANNOTATOR_REMOTE = "0";
     const bridge = await createBunAgentTerminalBridge({
       enabled: true,
       cwd: "/tmp/plannotator-agent-cwd",
