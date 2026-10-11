@@ -158,56 +158,41 @@ export function createNodePtyWebSocketServer(options) {
   });
 
   test("reports disabled capability in remote mode without terminal opt-in", async () => {
-    const previousRemote = process.env.PLANNOTATOR_REMOTE;
-    const previousAgentRemote = process.env.PLANNOTATOR_AGENT_TERMINAL_REMOTE;
     process.env.PLANNOTATOR_REMOTE = "1";
     delete process.env.PLANNOTATOR_AGENT_TERMINAL_REMOTE;
-    try {
-      const bridge = await createBunAgentTerminalBridge({
-        enabled: true,
-        cwd: "/tmp/plannotator-agent-cwd",
-      });
+    const bridge = await createBunAgentTerminalBridge({
+      enabled: true,
+      cwd: "/tmp/plannotator-agent-cwd",
+    });
 
+    try {
       expect(bridge.capability).toMatchObject({
         enabled: false,
         reason: "remote-disabled",
       });
       expect(bridge.matches(`${AGENT_TERMINAL_WS_BASE_PATH}/anything`)).toBe(false);
-      bridge.dispose();
     } finally {
-      if (previousRemote === undefined) delete process.env.PLANNOTATOR_REMOTE;
-      else process.env.PLANNOTATOR_REMOTE = previousRemote;
-      if (previousAgentRemote === undefined) delete process.env.PLANNOTATOR_AGENT_TERMINAL_REMOTE;
-      else process.env.PLANNOTATOR_AGENT_TERMINAL_REMOTE = previousAgentRemote;
+      bridge.dispose();
     }
   });
 
   test("allows terminal capability in remote mode with explicit opt-in", async () => {
-    const previousRemote = process.env.PLANNOTATOR_REMOTE;
-    const previousAgentRemote = process.env.PLANNOTATOR_AGENT_TERMINAL_REMOTE;
     process.env.PLANNOTATOR_REMOTE = "1";
     process.env.PLANNOTATOR_AGENT_TERMINAL_REMOTE = "1";
-    try {
-      const bridge = await createBunAgentTerminalBridge({
-        enabled: true,
-        cwd: "/tmp/plannotator-agent-cwd",
-      });
+    const bridge = await createBunAgentTerminalBridge({
+      enabled: true,
+      cwd: "/tmp/plannotator-agent-cwd",
+    });
 
-      try {
-        expect(bridge.capability.enabled).toBe(true);
-        if (!bridge.capability.enabled) {
-          throw new Error("Expected enabled agent terminal capability");
-        }
-        expect(bridge.capability.wsPath.startsWith(`${AGENT_TERMINAL_WS_BASE_PATH}/`)).toBe(true);
-        expect(bridge.matches(bridge.capability.wsPath)).toBe(true);
-      } finally {
-        bridge.dispose();
+    try {
+      expect(bridge.capability.enabled).toBe(true);
+      if (!bridge.capability.enabled) {
+        throw new Error("Expected enabled agent terminal capability");
       }
+      expect(bridge.capability.wsPath.startsWith(`${AGENT_TERMINAL_WS_BASE_PATH}/`)).toBe(true);
+      expect(bridge.matches(bridge.capability.wsPath)).toBe(true);
     } finally {
-      if (previousRemote === undefined) delete process.env.PLANNOTATOR_REMOTE;
-      else process.env.PLANNOTATOR_REMOTE = previousRemote;
-      if (previousAgentRemote === undefined) delete process.env.PLANNOTATOR_AGENT_TERMINAL_REMOTE;
-      else process.env.PLANNOTATOR_AGENT_TERMINAL_REMOTE = previousAgentRemote;
+      bridge.dispose();
     }
   });
 });

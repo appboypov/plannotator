@@ -61,8 +61,6 @@ describe("pi annotate agent terminal capability", () => {
 	});
 
 	test("reports disabled capability in remote mode without terminal opt-in", async () => {
-		const previousRemote = process.env.PLANNOTATOR_REMOTE;
-		const previousAgentRemote = process.env.PLANNOTATOR_AGENT_TERMINAL_REMOTE;
 		process.env.PLANNOTATOR_REMOTE = "1";
 		delete process.env.PLANNOTATOR_AGENT_TERMINAL_REMOTE;
 		const httpServer = createServer();
@@ -81,10 +79,6 @@ describe("pi annotate agent terminal capability", () => {
 			bridge.dispose();
 		} finally {
 			httpServer.close();
-			if (previousRemote === undefined) delete process.env.PLANNOTATOR_REMOTE;
-			else process.env.PLANNOTATOR_REMOTE = previousRemote;
-			if (previousAgentRemote === undefined) delete process.env.PLANNOTATOR_AGENT_TERMINAL_REMOTE;
-			else process.env.PLANNOTATOR_AGENT_TERMINAL_REMOTE = previousAgentRemote;
 		}
 	});
 
