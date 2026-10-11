@@ -1,10 +1,18 @@
-import { describe, expect, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { AGENT_TERMINAL_WS_BASE_PATH } from "@plannotator/shared/agent-terminal";
 import { createBunAgentTerminalBridge } from "./agent-terminal";
+import { createTestEnvironment } from "../../tests/helpers/environment";
+
+const environment = createTestEnvironment(
+  ["PLANNOTATOR_REMOTE", "PLANNOTATOR_AGENT_TERMINAL_REMOTE"],
+  "plannotator-agent-terminal-",
+);
+beforeEach(() => environment.reset());
+afterEach(() => environment.restore());
 
 describe("bun agent terminal bridge", () => {
   test("node sidecar rebuilds spawn options from the server-owned launch plan", async () => {
