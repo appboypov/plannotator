@@ -253,7 +253,7 @@ Per Review, one delivery (batch, legacy Remark or notice) posts at a time in sto
 
 The next pending record determines the delivery: a batched Remark gathers every still-pending Remark of that Review with its `batch_id`; a legacy Remark or notice posts alone. The whole batch stays pending after a failure and retries together.
 
-A successful post whose response is lost can be repeated: delivery is at least once, with the item/notice id identifying duplicates. Logs contain Review id, record id, kind and status only, never words, paths or credentials.
+A successful post whose response is lost can be repeated: delivery is at least once, with the item/notice id identifying duplicates. Logs contain Review id, record id, batch id (`batch=-` for a notice or an unbatched Remark), kind and status only, never words, paths or credentials.
 
 ## Listen to Reviews
 
@@ -291,7 +291,7 @@ The line holds every listener, so `listeners` in the list and the page's presenc
 ```
 
 - `id`: `fi_` plus 24 lowercase hex characters, unique across Reviews and kept across restarts.
-- `batch_id` (optional since API 1.4): `bt_` plus 24 lowercase hex characters, generated once per Send feedback and shared by all its Remarks. Preserved across restarts and on live/replayed frames and listed open items; omitted for legacy records, never backfilled. A send's frames remain consecutive in store order.
+- `batch_id` (Plannotator's addition, optional since API 1.4): `bt_` plus 24 lowercase hex characters, generated once per Send feedback and shared by all its Remarks. Preserved across restarts and on live/replayed frames and listed open items; omitted for legacy records, never backfilled. A send's frames remain consecutive in store order.
 - `text`: the reviewer's words; `""` for an annotation without words, such as a deletion.
 - `anchor` (`RemarkAnchor`): `selector` is the annotated block's id (`""` for a global comment), `tag` the annotation kind lowercase (`comment`, `deletion`, `global_comment`), `text` the annotated excerpt. Each is `""` when the page sent none.
 - `feedback` (Plannotator's addition, absent when the page sent no text): the page's whole Send feedback text the Remark came with, upstream's agent-facing markdown, which also holds what is not a Remark (question answers, images, code annotations). Every Remark of one Send feedback carries the same text.

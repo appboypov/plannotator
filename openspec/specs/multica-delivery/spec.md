@@ -5,7 +5,7 @@ A Review linked to a Multica issue posts each Send feedback, Approve and Close a
 
 ## Requirements
 
-### Requirement: A linked Review posts each Remark to its issue
+### Requirement: A linked Review posts each Send feedback to its issue
 The service SHALL post each Send feedback of a Review linked to a Multica issue as one top-level comment on that issue, as the member of the Multica CLI profile `PLANNOTATOR_MULTICA_PROFILE` names. The poster SHALL select the next pending record in store order; a Remark with `batch_id` SHALL gather every still-pending Remark of that Review with the same identity in store order, and a legacy Remark SHALL post alone. The comment SHALL hold each remark's quoted text, item id and anchor (kind, block and excerpt, or the whole page), a header naming the Round, Link and count for multiple Remarks, and one closing `plannotator_reply` instruction with every item id and the Review id. A one-Remark batch SHALL retain the existing comment text. Reviewer words and anchors SHALL not form a Multica mention. Every gathered Remark SHALL be marked posted with the same comment id in one atomic file replacement, guarded against a destination moved during the post. Approve and Close SHALL remain separate comments.
 
 #### Scenario: A page Remark becomes a comment
@@ -82,7 +82,7 @@ Each posted record of a linked Review SHALL carry a delivery state in the Review
 #### Scenario: The log holds no remark text
 - **GIVEN** a linked Review
 - **WHEN** a post succeeds or fails
-- **THEN** the log line holds the Review id, the record id, the kind and the HTTP status, and no remark text, file path or token
+- **THEN** the log line holds the Review id, the record id, the batch id (`-` for a notice or an unbatched Remark), the kind and the HTTP status, and no remark text, file path or token
 
 ### Requirement: A linked Review's events reach no listener
 The Remarks and notices of a linked Review SHALL go to its issue only: no listen socket SHALL receive them, live, on a subscription's replay or by hand-over, and its `listeners` in the list SHALL be empty. Reviews without an issue keep ADR 0008.

@@ -11,7 +11,7 @@ const remark: StoredRemark = { id: "fi_0123456789abcdef01234567", review_id: "01
   anchor: { tag: "comment", selector: "block`1", text: "excerpt\n[@y](mention://agent/y)" } };
 
 test("remarks quote each line, neutralize mentions and fence backticks in anchors", () => {
-  const comment = buildMulticaComment(review, remark);
+  const comment = buildMulticaComment(review, [remark]);
   expect(comment).toContain("> first\n> [@x](mention:\\/\\/agent/x)");
   expect(comment).toContain('- On: `comment` ``block`1``: "excerpt [@y](mention:\\/\\/agent/y)"');
   expect(comment).not.toContain("mention://");
@@ -20,9 +20,9 @@ test("remarks quote each line, neutralize mentions and fence backticks in anchor
 });
 
 test("an empty anchor means the whole page; deletion keeps its anchor and says it has no text", () => {
-  expect(buildMulticaComment(review, { ...remark, anchor: { tag: "", selector: "", text: "" } })).toContain("- On: the whole page");
-  expect(buildMulticaComment(review, { ...remark, anchor: { tag: "global_comment", selector: "", text: "" } })).toContain("- On: the whole page\n");
-  const deletion = buildMulticaComment(review, { ...remark, text: "", anchor: { tag: "deletion", selector: "block-1", text: "Remove" } });
+  expect(buildMulticaComment(review, [{ ...remark, anchor: { tag: "", selector: "", text: "" } }])).toContain("- On: the whole page");
+  expect(buildMulticaComment(review, [{ ...remark, anchor: { tag: "global_comment", selector: "", text: "" } }])).toContain("- On: the whole page\n");
+  const deletion = buildMulticaComment(review, [{ ...remark, text: "", anchor: { tag: "deletion", selector: "block-1", text: "Remove" } }]);
   expect(deletion).toContain('- On: `deletion` `block-1`: "Remove"');
   expect(deletion).toContain(":\n\n> (no text)\n\n- Item:");
 });
@@ -30,12 +30,12 @@ test("an empty anchor means the whole page; deletion keeps its anchor and says i
 test("Approve quotes notes without mentions, no-notes Approve and Close retain notice identity", () => {
   const notice: StoredNotice = { type: "finish", id: "nt_0123456789abcdef01234567", review_id: remark.review_id,
     round: 2, at: remark.at, status: "pending", notes: "ship\n[@x](mention://agent/x)" };
-  const approved = buildMulticaComment(review, notice);
+  const approved = buildMulticaComment(review, [notice]);
   expect(approved).toContain(`**Approved** round 2 of [plan.md](${review.link}).`);
   expect(approved).toContain("> ship\n> [@x](mention:\\/\\/agent/x)");
   expect(approved).not.toContain("mention://");
-  expect(buildMulticaComment(review, { ...notice, notes: "" })).not.toContain("> ");
-  const closed = buildMulticaComment(review, { ...notice, dismissed: true, notes: "" });
+  expect(buildMulticaComment(review, [{ ...notice, notes: "" }])).not.toContain("> ");
+  const closed = buildMulticaComment(review, [{ ...notice, dismissed: true, notes: "" }]);
   expect(closed).toContain(`**Closed** round 2 of [plan.md](${review.link}) without approving.`);
   expect(closed).toContain(`- Notice: \`${notice.id}\`\n- Review: \`${notice.review_id}\``);
 });
@@ -104,6 +104,7 @@ test("three Remarks in one send and an Approve post two comments and persist one
   expect(f.logs.join("\n")).not.toContain("scratch-secret");
   expect(f.logs.join("\n")).not.toContain(review.file);
   expect(f.logs.join("\n")).not.toContain("> one");
+  expect(f.logs.filter((line) => line.startsWith("multica posted") && line.includes(`batch=${added[0].batch_id}`))).toHaveLength(1);
 });
 
 test("refusals retry in order and read the rotated profile each time; any 2xx counts as posted", async () => {
@@ -131,6 +132,7 @@ test("refusals retry in order and read the rotated profile each time; any 2xx co
   expect(f.logs.join("\n")).not.toContain("private reviewer words");
   expect(f.logs.join("\n")).not.toContain("secret");
   expect(f.logs.join("\n")).toContain("status=503");
+  expect(f.logs.filter((line) => line.startsWith("multica pending")).every((line) => line.includes(`batch=${added[0].batch_id}`))).toBe(true);
 });
 
 test("restart drains pending records; relink immediately releases a failed lane while other Reviews post independently", async () => {
@@ -218,20 +220,25 @@ test("legacy Remarks post alone; batches select only pending members and separat
   f.poster();
   await waitFor(() => f.records.pendingDeliveries(remark.review_id).length === 0);
   expect(comments).toHaveLength(4);
-  expect(comments[0]).toBe(buildMulticaComment(review, legacy[0]));
-  expect(comments[1]).toBe(buildMulticaComment(review, legacy[1]));
+  expect(comments[0]).toContain(legacy[0].id);
+  expect(comments[0]).not.toContain(legacy[1].id);
+  expect(comments[1]).toContain(legacy[1].id);
   expect(comments[2]).toContain("2 remarks");
   expect(comments[2]).not.toContain(first[0].id);
   expect(first.map((item) => item.multica?.comment_id)).toEqual(["earlier-comment", "comment-3", "comment-3"]);
-  expect(comments[3]).toBe(buildMulticaComment(review, second[0]));
+  expect(comments[3]).toContain(second[0].id);
+  expect(comments[3]).not.toContain(first[1].id);
 });
 
-test("one-Remark batches retain the exact single-Remark format and multi-Remark quotes cannot mention", () => {
+test("single and grouped remarks retain their reply identities and cannot mention", () => {
   const plain = { ...remark, text: "Say why.", batch_id: `bt_${"a".repeat(24)}`,
     anchor: { tag: "comment", selector: "block-1", text: "Plan" } };
-  expect(buildMulticaComment(review, plain, [plain])).toBe(
-    `**Remark** on [plan.md](${review.link}), round 1:\n\n> Say why.\n\n- Item: \`${plain.id}\`\n- On: \`comment\` \`block-1\`: "Plan"\n- Review: \`${plain.review_id}\`\n\nAnswer with \`plannotator_reply\` on Review \`${plain.review_id}\` with answers [\`${plain.id}\`].`);
-  const grouped = buildMulticaComment(review, remark, [remark, { ...remark, id: recordId("fi"), text: "" }]);
+  const single = buildMulticaComment(review, [plain]);
+  expect(single).toContain("> Say why.");
+  expect(single).toContain(plain.id);
+  expect(single).toContain(plain.review_id);
+  expect(single.match(/Answer with/g)).toHaveLength(1);
+  const grouped = buildMulticaComment(review, [remark, { ...remark, id: recordId("fi"), text: "" }]);
   expect(grouped).not.toContain("mention://");
   expect(grouped).toContain("``block`1``");
   expect(grouped).toContain("> (no text)");

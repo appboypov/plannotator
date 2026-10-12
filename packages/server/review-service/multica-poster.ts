@@ -16,8 +16,9 @@ function codeSpan(value: string): string {
   return `${fence}${pad}${text}${pad}${fence}`;
 }
 
-/** The member's top-level comment: reviewer text is quoted and cannot mention an agent. */
-export function buildMulticaComment(review: { file: string; link: string }, record: StoredRemark | StoredNotice, batch: readonly StoredRemark[] = []): string {
+/** One batch of Remarks or one notice; reviewer text is quoted and cannot mention an agent. */
+export function buildMulticaComment(review: { file: string; link: string }, batch: readonly StoredRemark[] | readonly [StoredNotice]): string {
+  const record = batch[0]!;
   const name = basename(review.file).replace(/[\\[\]]/g, "\\$&");
   const link = `[${name}](${review.link})`;
   const id = codeSpan(record.id);
@@ -30,7 +31,7 @@ export function buildMulticaComment(review: { file: string; link: string }, reco
       ? `\n\n${withoutMentions(record.notes).split(/\r?\n/).map((line) => `> ${line}`).join("\n")}` : "";
     return `${title}${notes}\n\n- Notice: ${id}\n- Review: ${reviewId}`;
   }
-  const remarks = batch.length > 0 ? batch : [record];
+  const remarks = batch as readonly StoredRemark[];
   const sections = remarks.map((remark) => {
     const quote = `${withoutMentions(remark.text || "(no text)").split(/\r?\n/).map((line) => `> ${line}`).join("\n")}\n\n`;
     // A remark with no block and no excerpt (a general comment) is about the whole page.
@@ -124,10 +125,11 @@ export class MulticaPoster {
       const pending = pendingRecords[0];
       if (!pending?.multica) return;
       const record = { ...pending, multica: { ...pending.multica } };
-      const batch = !("type" in pending) && pending.batch_id
-        ? pendingRecords.filter((item): item is StoredRemark => !("type" in item) && item.batch_id === pending.batch_id)
-        : [];
-      const ids = batch.length > 0 ? batch.map((item) => item.id) : [record.id];
+      const batch = "type" in record ? [record] as const : record.batch_id
+        ? pendingRecords.filter((item): item is StoredRemark => !("type" in item) && item.batch_id === record.batch_id)
+        : [record];
+      const ids = batch.map((item) => item.id);
+      const batchId = "type" in record ? "-" : record.batch_id ?? "-";
       const generation = lane.relinkGeneration;
       let status: number | string = "profile";
       const kind = "type" in record ? record.type : "feedback_item";
@@ -150,7 +152,7 @@ export class MulticaPoster {
             method: "POST",
             headers: { authorization: `Bearer ${profile.token}`, "content-type": "application/json",
               "X-Workspace-ID": record.multica.workspace_id },
-            body: JSON.stringify({ content: buildMulticaComment(review, record, batch) }),
+            body: JSON.stringify({ content: buildMulticaComment(review, batch) }),
             redirect: "error",
             signal: AbortSignal.any([this.stopping.signal, AbortSignal.timeout(POST_TIMEOUT_MS)]),
           });
@@ -164,15 +166,15 @@ export class MulticaPoster {
         const commentId = comment !== null && typeof comment === "object" && "id" in comment &&
           typeof comment.id === "string" && comment.id.trim() ? comment.id : null;
         if (!await records.markPosted(ids, commentId, new Date().toISOString(), record.multica)) {
-          log(`multica pending review=${encodeURIComponent(reviewId)} id=${encodeURIComponent(record.id)} kind=${kind} status=${status} cause=moved`);
+          log(`multica pending review=${encodeURIComponent(reviewId)} id=${encodeURIComponent(record.id)} batch=${encodeURIComponent(batchId)} kind=${kind} status=${status} cause=moved`);
           continue;
         }
         lane.delay = FIRST_RETRY_MS;
-        log(`multica posted review=${encodeURIComponent(reviewId)} id=${encodeURIComponent(record.id)} kind=${kind} status=${status}`);
+        log(`multica posted review=${encodeURIComponent(reviewId)} id=${encodeURIComponent(record.id)} batch=${encodeURIComponent(batchId)} kind=${kind} status=${status}`);
       } catch (error) {
         if (this.closed) return;
         const cause = error instanceof Error ? (error as NodeJS.ErrnoException).code ?? error.name : "unknown";
-        log(`multica pending review=${encodeURIComponent(reviewId)} id=${encodeURIComponent(record.id)} kind=${kind} status=${status} cause=${encodeURIComponent(cause)}`);
+        log(`multica pending review=${encodeURIComponent(reviewId)} id=${encodeURIComponent(record.id)} batch=${encodeURIComponent(batchId)} kind=${kind} status=${status} cause=${encodeURIComponent(cause)}`);
         if (generation !== lane.relinkGeneration) continue;
         this.retryLater(reviewId, lane);
         return;
