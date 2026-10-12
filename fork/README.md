@@ -78,7 +78,7 @@ Set it when opening (`"visibility": "public"`) or at any time with `POST /api/re
 
 `docs/review-api.md` is the contract: Lavish's review API v1 with the same field names (`adr/0004-review-api-v1-matches-lavish.md`), so a Lavish client works against it. In short, on `127.0.0.1:4397`:
 
-- `GET /api/review/version`: `{ "major": 1, "minor": 3 }`; check the major first.
+- `GET /api/review/version`: `{ "major": 1, "minor": 4 }`; check the major first.
 - `POST /api/review/v1/reviews`: open or reopen a canonical file or PR URL's Review; `GET` lists Reviews (`?file=` accepts either subject and adds its open Remarks).
 - `POST /api/review/v1/reviews/:id/replies`, `/cancel`, `/visibility`: Reply to Remarks, cancel the Round, change the Visibility.
 - `GET /api/review/v1/listen?session=<id>` (WebSocket): subscribe to Reviews; Remarks and Finish or Cancel notices wait on disk until a listener takes them, so a Remark sent while no one listens reaches the next listener. One listener holds each Review and alone receives its events: the first that names it, else the first subscribed to all; when it leaves, the next takes the Review with what it has not received (`adr/0008-one-listener-holds-each-review.md`).
@@ -86,7 +86,7 @@ Set it when opening (`"visibility": "public"`) or at any time with `POST /api/re
 
 Types are in `packages/shared/review-api/`. `plannotator annotate <file>` and a plain `plannotator review <PR_URL>` are clients of this API (`apps/hook/server/annotate-service.ts`, `review-service-client.ts`, ADRs 0007 and 0009); with no service they fail and say to start it. Other upstream modes keep their one-shot server.
 
-Open with optional `issue: { id, workspace_id }` to send every Remark, Approve and Close to that Multica issue as a member comment instead of a listener event. The service requires `PLANNOTATOR_MULTICA_PROFILE`; linked Reviews return `issue` and `listeners: []`, unlinked ones return `issue: null`. Opening without issue keeps it; with another replaces it and redirects pending deliveries. Failed posts retry durably in store order. See "Comments on the Multica issue" in the API contract.
+Open with optional `issue: { id, workspace_id }` to send each Send feedback, Approve and Close to that Multica issue as a member comment instead of listener events. Remarks from one send share a durable `batch_id` and one comment with all their answerable item ids; legacy Remarks without it post alone. The service requires `PLANNOTATOR_MULTICA_PROFILE`; linked Reviews return `issue` and `listeners: []`, unlinked ones return `issue: null`. Opening without issue keeps it; with another replaces it and redirects pending deliveries. Failed posts retry durably in store order. See "Comments on the Multica issue" in the API contract.
 
 ## Settings
 

@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { MulticaIssue } from "@plannotator/shared/review-api";
-import { ReviewRecords, recordId, remarksFromFeedback, type StoredNotice } from "./records.ts";
+import { ReviewRecords, openRemark, recordId, remarkEvent, remarksFromFeedback, type StoredNotice } from "./records.ts";
 
 const dirs: string[] = [];
 afterEach(() => { for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true }); });
@@ -37,9 +37,9 @@ test("delivery survives reload, preserves posted destinations and enrolls only o
   const linkedCancel = notice("cancel"); await records.addNotice(linkedCancel);
   expect(linked[0].multica).toEqual({ issue: "WORK-1", workspace_id: "W", status: "pending" });
   expect(linkedFinish.multica?.status).toBe("pending"); expect(linkedCancel.multica).toBeUndefined();
-  await records.markPosted(remarks[1].id, "comment-1", finish.at);
+  await records.markPosted([remarks[1].id], "comment-1", finish.at);
   issue = { id: "WORK-2", workspace_id: "W2" }; await records.relink(id, issue, 2);
-  await records.markPosted(finish.id, "comment-2", finish.at);
+  await records.markPosted([finish.id], "comment-2", finish.at);
   records = await ReviewRecords.load([id], folder, () => {}, () => issue);
   expect(records.pendingDeliveries(id).map((r) => r.multica)).toEqual([
     { issue: "WORK-2", workspace_id: "W2", status: "pending" },
@@ -68,4 +68,28 @@ test("a link binds no Remark a listener received and no Finish of an earlier Rou
   expect(received.multica).toBeUndefined(); expect(earlier.multica).toBeUndefined();
   await records.relink(id, { id: "WORK-2", workspace_id: "W" }, 1);
   expect(records.pendingDeliveries(id).map((r) => r.id)).toEqual([unseen.id, earlier.id]);
+});
+
+test("one send shares a durable batch identity; separate sends and legacy records stay distinct", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "pn-records-")); dirs.push(dir);
+  const review = { review_id: "0123456789abcdef", round: 1 };
+  const folder = (id: string) => join(dir, id);
+  const at = "2026-10-12T00:00:00.000Z";
+  const first = remarksFromFeedback({ annotations: [{ text: "one" }, { text: "two" }] }, review, at);
+  const second = remarksFromFeedback({ feedback: "another send" }, review, at);
+  expect(first[0].batch_id).toMatch(/^bt_[0-9a-f]{24}$/);
+  expect(first[1].batch_id).toBe(first[0].batch_id);
+  expect(second[0].batch_id).toMatch(/^bt_[0-9a-f]{24}$/);
+  expect(second[0].batch_id).not.toBe(first[0].batch_id);
+  const { batch_id: _batch, ...legacy } = second[0];
+  const records = await ReviewRecords.load([review.review_id], folder, () => {});
+  await records.addRemarks(review.review_id, [...first, ...second, { ...legacy, id: recordId("fi") }]);
+  const reloaded = await ReviewRecords.load([review.review_id], folder, () => {});
+  const kept = reloaded.open(review.review_id);
+  expect(kept.map((item) => item.batch_id)).toEqual([first[0].batch_id, first[0].batch_id, second[0].batch_id, undefined]);
+  expect(remarkEvent(kept[0]).batch_id).toBe(first[0].batch_id);
+  expect(openRemark(kept[1]).batch_id).toBe(first[0].batch_id);
+  expect(kept[3]).not.toHaveProperty("batch_id");
+  expect(remarkEvent(kept[3])).not.toHaveProperty("batch_id");
+  expect(openRemark(kept[3])).not.toHaveProperty("batch_id");
 });

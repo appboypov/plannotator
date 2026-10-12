@@ -72,7 +72,7 @@ const NOTICE_ID = /^nt_[0-9a-f]{24}$/;
 const REPLY_ID = /^rp_[0-9a-f]{24}$/;
 
 /** A new record id: [prefix], an underscore and 24 lowercase hex characters. */
-export function recordId(prefix: "fi" | "nt" | "rp"): string {
+export function recordId(prefix: "fi" | "nt" | "rp" | "bt"): string {
   return `${prefix}_${randomBytes(12).toString("hex")}`;
 }
 
@@ -91,8 +91,10 @@ export function remarksFromFeedback(
   const annotations = field(body, "annotations");
   const feedback = text(field(body, "feedback"));
   const sent = feedback.trim() ? { feedback } : {};
+  const batch_id = recordId("bt");
   const remark = (words: string, anchor: RemarkAnchor): StoredRemark => ({
     id: recordId("fi"),
+    batch_id,
     review_id: review.review_id,
     round: review.round,
     text: words,
@@ -134,8 +136,9 @@ export function remarksFromFeedback(
 
 /** [remark] as the listen socket's frame. */
 export function remarkEvent(remark: StoredRemark): RemarkEvent {
-  const { id, review_id, round, text, anchor, feedback } = remark;
-  return { type: "feedback_item", id, review_id, round, text, anchor, ...(feedback === undefined ? {} : { feedback }) };
+  const { id, batch_id, review_id, round, text, anchor, feedback } = remark;
+  return { type: "feedback_item", id, review_id, round, text, anchor,
+    ...(batch_id === undefined ? {} : { batch_id }), ...(feedback === undefined ? {} : { feedback }) };
 }
 
 /** [remark] as a one-file list's open item. */
@@ -253,23 +256,30 @@ export class ReviewRecords {
   }
 
   /**
-   * Persist successful delivery and notice acknowledgement together. False when the record is no
-   * longer pending for [destination]: a relink moved it during the post.
+   * Persist a successful delivery together, with one write per record file. Validate
+   * every destination before changing any member, so a relink cannot split a batch.
    */
-  async markPosted(id: string, commentId: string | null, at: IsoTime, destination?: MulticaDelivery): Promise<boolean> {
+  async markPosted(ids: readonly string[], commentId: string | null, at: IsoTime, destination?: MulticaDelivery): Promise<boolean> {
+    if (ids.length === 0) return false;
+    const selected = new Set(ids);
     for (const reviewId of this.reviewIds()) {
-      const record = [...(this.remarks.get(reviewId) ?? []), ...(this.notices.get(reviewId) ?? [])]
-        .find((entry) => entry.id === id);
-      if (!record) continue;
-      const current = record.multica;
-      if (current?.status !== "pending" || (destination &&
-          (current.issue !== destination.issue || current.workspace_id !== destination.workspace_id))) return false;
-      record.multica = { ...current, status: "posted", ...(commentId ? { comment_id: commentId } : {}), posted_at: at };
-      if ("type" in record) {
-        record.status = "acknowledged";
-        record.acknowledged_at = at;
+      const records = [...(this.remarks.get(reviewId) ?? []), ...(this.notices.get(reviewId) ?? [])]
+        .filter((entry) => selected.has(entry.id));
+      if (records.length !== selected.size) continue;
+      if (records.some((record) => record.multica?.status !== "pending" || (destination &&
+          (record.multica.issue !== destination.issue || record.multica.workspace_id !== destination.workspace_id)))) return false;
+      const files = new Set<RecordFile>();
+      for (const record of records) {
+        record.multica = { ...record.multica!, status: "posted", ...(commentId ? { comment_id: commentId } : {}), posted_at: at };
+        if ("type" in record) {
+          record.status = "acknowledged";
+          record.acknowledged_at = at;
+          files.add(NOTICES_FILE);
+        } else {
+          files.add(REMARKS_FILE);
+        }
       }
-      await this.write(reviewId, "type" in record ? NOTICES_FILE : REMARKS_FILE);
+      await Promise.all([...files].map((file) => this.write(reviewId, file)));
       return true;
     }
     return false;
@@ -437,10 +447,13 @@ function parseRemark(value: unknown, reviewId: ReviewId): StoredRemark | undefin
   if (typeof at !== "string" || (status !== "open" && status !== "answered")) return undefined;
   if (!Array.isArray(deliveredTo) || !deliveredTo.every((session) => typeof session === "string")) return undefined;
   const feedback = field(value, "feedback");
+  const batch_id = field(value, "batch_id");
+  if (batch_id !== undefined && (typeof batch_id !== "string" || !/^bt_[0-9a-f]{24}$/.test(batch_id))) return undefined;
   const multica = parseDelivery(field(value, "multica"));
   if (multica === null) return undefined;
   return {
     id,
+    ...(batch_id === undefined ? {} : { batch_id }),
     review_id: reviewId,
     round,
     text: remarkText,
