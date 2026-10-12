@@ -100,13 +100,13 @@ describe("review service", () => {
     expect(again).toEqual(first);
   });
 
-  test("page Send feedback and Approve post three ordered comments; Cancel posts none", async () => {
+  test.each(["approve", "exit"])("page Send feedback and %s post two ordered comments; Cancel posts none", async (decision) => {
     const comments: string[] = [];
     const received = Promise.withResolvers<void>();
     const fake = Bun.serve({ hostname: "127.0.0.1", port: 0, fetch: async (request) => {
       expect(request.headers.get("X-Workspace-ID")).toBe("W");
       comments.push((await request.json()).content);
-      if (comments.length === 3) received.resolve();
+      if (comments.length === 2) received.resolve();
       return Response.json({ id: `comment-${comments.length}` }, { status: 201 });
     } });
     try {
@@ -120,13 +120,18 @@ describe("review service", () => {
         round: 1, annotations: [{ type: "comment", blockId: "block-1", originalText: "Plan", text: "one" },
           { type: "comment", blockId: "block-2", originalText: "Ship", text: "two" }],
       }) })).status).toBe(200);
-      expect((await fetch(`${link}api/approve`, { method: "POST", body: JSON.stringify({ round: 1, feedback: "ship" }) })).status).toBe(200);
+      expect((await fetch(`${link}api/${decision}`, { method: "POST", body: JSON.stringify({
+        round: 1, feedback: "ship", ...(decision === "exit" ? { dismissed: true } : {}),
+      }) })).status).toBe(200);
       await received.promise;
-      expect(comments.map((content) => content.match(/> (one|two|ship)/)?.[1])).toEqual(["one", "two", "ship"]);
+      expect(comments[0]).toContain("> one");
+      expect(comments[0]).toContain("> two");
+      expect(comments[0]).toContain("2 remarks");
+      expect(comments[1]).toContain(decision === "approve" ? "**Approved**" : "**Closed**");
       const cancelled = await (await open(document("cancel.md", "# Cancel\n"), { issue })).json();
       await fetch(`${service!.url}/api/review/v1/reviews/${cancelled.review_id}/cancel`, { method: "POST" });
       await service!.stop();
-      expect(comments).toHaveLength(3);
+      expect(comments).toHaveLength(2);
       const notices = JSON.parse(readFileSync(join(reviewsDir, cancelled.review_id, "notices.json"), "utf8")).notices;
       expect(notices[0]).not.toHaveProperty("multica");
     } finally { fake.stop(true); }
@@ -278,8 +283,8 @@ describe("review service", () => {
     await start();
     const health = await fetch(`${service!.url}/plannotator/health`);
     expect(health.status).toBe(200);
-    expect(await health.json()).toEqual({ ok: true, app: "plannotator", version: "test", api: { major: 1, minor: 3 } });
-    expect(await (await fetch(`${service!.url}/api/review/version`)).json()).toEqual({ major: 1, minor: 3 });
+    expect(await health.json()).toEqual({ ok: true, app: "plannotator", version: "test", api: { major: 1, minor: 4 } });
+    expect(await (await fetch(`${service!.url}/api/review/version`)).json()).toEqual({ major: 1, minor: 4 });
   });
 
   test("names the LaunchAgent in health when launchd runs it", async () => {

@@ -72,8 +72,7 @@ async function fixture(handler: (request: Request) => Response | Promise<Respons
   };
   return { home, profile, folder, records, logs, poster };
 }
-
-test("three Remarks and Approve post in store order, acknowledge durably and never replay after restart", async () => {
+test("three Remarks in one send and an Approve post two comments and persist one batch comment id", async () => {
   const comments: string[] = [], headers: string[][] = [];
   const f = await fixture(async (request) => {
     headers.push([request.headers.get("authorization")!, request.headers.get("X-Workspace-ID")!]);
@@ -87,14 +86,21 @@ test("three Remarks and Approve post in store order, acknowledge durably and nev
   await f.records.addNotice(notice);
   const poster = f.poster();
   await waitFor(() => f.records.pendingDeliveries(remark.review_id).length === 0);
-  expect(comments.map((content) => content.match(/> (one|two|three|ship)/)?.[1])).toEqual(["one", "two", "three", "ship"]);
-  expect(headers).toEqual(Array(4).fill(["Bearer scratch-secret", "W"]));
+  expect(comments).toHaveLength(2);
+  expect(comments[0]).toContain("3 remarks");
+  for (const item of added) expect(comments[0]).toContain(`- Item: \`${item.id}\``);
+  expect(comments[0]).toContain(`answers [${added.map((item) => `\`${item.id}\``).join(", ")}].`);
+  expect(comments[0].indexOf("> one")).toBeLessThan(comments[0].indexOf("> two"));
+  expect(comments[0].indexOf("> two")).toBeLessThan(comments[0].indexOf("> three"));
+  expect(comments[0].match(/Answer with/g)).toHaveLength(1);
+  expect(comments[1]).toContain("**Approved**");
+  expect(headers).toEqual(Array(2).fill(["Bearer scratch-secret", "W"]));
   expect(notice.status).toBe("acknowledged");
-  expect(notice.multica).toMatchObject({ status: "posted", comment_id: "comment-4" });
+  expect(notice.multica).toMatchObject({ status: "posted", comment_id: "comment-2" });
   await poster.stop();
   const loaded = await ReviewRecords.load([remark.review_id], f.folder, () => {});
   expect(loaded.pendingDeliveries(remark.review_id)).toEqual([]);
-  expect(loaded.open(remark.review_id).map((r) => r.multica?.comment_id)).toEqual(["comment-1", "comment-2", "comment-3"]);
+  expect(loaded.open(remark.review_id).map((r) => r.multica?.comment_id)).toEqual(["comment-1", "comment-1", "comment-1"]);
   expect(f.logs.join("\n")).not.toContain("scratch-secret");
   expect(f.logs.join("\n")).not.toContain(review.file);
   expect(f.logs.join("\n")).not.toContain("> one");
@@ -108,16 +114,17 @@ test("refusals retry in order and read the rotated profile each time; any 2xx co
     if (attempts.length === 2) return new Response("refused", { status: 502 });
     return new Response(null, { status: 204 });
   });
-  const added = remarksFromFeedback({ feedback: "private reviewer words" }, remark, remark.at);
+  const added = remarksFromFeedback({ annotations: [{ text: "private reviewer words" }, { text: "second answer" }] }, remark, remark.at);
   await f.records.addRemarks(remark.review_id, added);
   const poster = f.poster();
   await waitFor(() => attempts.length === 1);
-  expect(added[0].multica?.status).toBe("pending");
+  expect(added.map((item) => item.multica?.status)).toEqual(["pending", "pending"]);
   const config = JSON.parse(await Bun.file(f.profile).text());
   writeFileSync(f.profile, JSON.stringify({ ...config, token: "rotated-secret" }));
   poster.wake(remark.review_id); // new records do not bypass a failed lane's backoff
-  await waitFor(() => added[0].multica?.status === "posted");
-  expect(added[0].multica).not.toHaveProperty("comment_id");
+  await waitFor(() => added.every((item) => item.multica?.status === "posted"));
+  for (const item of added) expect(item.multica).not.toHaveProperty("comment_id");
+  expect(new Set(attempts.map((attempt) => attempt.content)).size).toBe(1);
   expect(attempts.map((a) => a.auth)).toEqual(["Bearer scratch-secret", "Bearer rotated-secret", "Bearer rotated-secret"]);
   expect(attempts[1].at - attempts[0].at).toBeGreaterThanOrEqual(900);
   expect(attempts[2].at - attempts[1].at).toBeGreaterThanOrEqual(1900);
@@ -173,16 +180,16 @@ test("a relink during HTTP cannot acknowledge the new destination with the old r
     if (paths.length === 1) { entered.resolve(); await release.promise; }
     return Response.json({ id: `comment-${paths.length}` }, { status: 201 });
   });
-  const added = remarksFromFeedback({ feedback: "moving" }, remark, remark.at);
+  const added = remarksFromFeedback({ annotations: [{ text: "moving one" }, { text: "moving two" }] }, remark, remark.at);
   await f.records.addRemarks(remark.review_id, added);
   const poster = f.poster();
   await entered.promise;
   await f.records.relink(remark.review_id, { id: "WORK-2", workspace_id: "W2" }, 1);
   poster.wake(remark.review_id, true);
   release.resolve();
-  await waitFor(() => added[0].multica?.status === "posted");
+  await waitFor(() => added.every((item) => item.multica?.status === "posted"));
   expect(paths).toEqual(["/api/issues/WORK-1/comments", "/api/issues/WORK-2/comments"]);
-  expect(added[0].multica).toMatchObject({ issue: "WORK-2", comment_id: "comment-2" });
+  for (const item of added) expect(item.multica).toMatchObject({ issue: "WORK-2", comment_id: "comment-2" });
   expect(f.logs.filter((line) => line.startsWith("multica posted"))).toHaveLength(1);
   expect(f.logs.some((line) => line.startsWith("multica pending") && line.endsWith("cause=moved"))).toBe(true);
   await poster.stop();
@@ -194,4 +201,39 @@ test("a relink during HTTP cannot acknowledge the new destination with the old r
   await activeRequest.promise;
   await active.stop();
   expect(waiting[0].multica?.status).toBe("pending");
+});
+
+test("legacy Remarks post alone; batches select only pending members and separate sends stay separate", async () => {
+  const comments: string[] = [];
+  const f = await fixture(async (request) => {
+    comments.push((await request.json()).content);
+    return Response.json({ id: `comment-${comments.length}` }, { status: 201 });
+  });
+  const at = "2026-10-12T00:00:00.000Z";
+  const legacy = [1, 2].map(() => ({ ...remark, id: recordId("fi"), delivered_to: [] }));
+  const first = remarksFromFeedback({ annotations: [{ text: "already posted" }, { text: "pending one" }, { text: "pending two" }] }, remark, at);
+  const second = remarksFromFeedback({ feedback: "next send" }, remark, at);
+  await f.records.addRemarks(remark.review_id, [...legacy, ...first, ...second]);
+  await f.records.markPosted([first[0].id], "earlier-comment", at);
+  f.poster();
+  await waitFor(() => f.records.pendingDeliveries(remark.review_id).length === 0);
+  expect(comments).toHaveLength(4);
+  expect(comments[0]).toBe(buildMulticaComment(review, legacy[0]));
+  expect(comments[1]).toBe(buildMulticaComment(review, legacy[1]));
+  expect(comments[2]).toContain("2 remarks");
+  expect(comments[2]).not.toContain(first[0].id);
+  expect(first.map((item) => item.multica?.comment_id)).toEqual(["earlier-comment", "comment-3", "comment-3"]);
+  expect(comments[3]).toBe(buildMulticaComment(review, second[0]));
+});
+
+test("one-Remark batches retain the exact single-Remark format and multi-Remark quotes cannot mention", () => {
+  const plain = { ...remark, text: "Say why.", batch_id: `bt_${"a".repeat(24)}`,
+    anchor: { tag: "comment", selector: "block-1", text: "Plan" } };
+  expect(buildMulticaComment(review, plain, [plain])).toBe(
+    `**Remark** on [plan.md](${review.link}), round 1:\n\n> Say why.\n\n- Item: \`${plain.id}\`\n- On: \`comment\` \`block-1\`: "Plan"\n- Review: \`${plain.review_id}\`\n\nAnswer with \`plannotator_reply\` on Review \`${plain.review_id}\` with answers [\`${plain.id}\`].`);
+  const grouped = buildMulticaComment(review, remark, [remark, { ...remark, id: recordId("fi"), text: "" }]);
+  expect(grouped).not.toContain("mention://");
+  expect(grouped).toContain("``block`1``");
+  expect(grouped).toContain("> (no text)");
+  expect(grouped.match(/Answer with/g)).toHaveLength(1);
 });

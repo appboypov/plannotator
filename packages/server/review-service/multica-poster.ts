@@ -17,7 +17,7 @@ function codeSpan(value: string): string {
 }
 
 /** The member's top-level comment: reviewer text is quoted and cannot mention an agent. */
-export function buildMulticaComment(review: { file: string; link: string }, record: StoredRemark | StoredNotice): string {
+export function buildMulticaComment(review: { file: string; link: string }, record: StoredRemark | StoredNotice, batch: readonly StoredRemark[] = []): string {
   const name = basename(review.file).replace(/[\\[\]]/g, "\\$&");
   const link = `[${name}](${review.link})`;
   const id = codeSpan(record.id);
@@ -30,15 +30,22 @@ export function buildMulticaComment(review: { file: string; link: string }, reco
       ? `\n\n${withoutMentions(record.notes).split(/\r?\n/).map((line) => `> ${line}`).join("\n")}` : "";
     return `${title}${notes}\n\n- Notice: ${id}\n- Review: ${reviewId}`;
   }
-  const quote = `${withoutMentions(record.text || "(no text)").split(/\r?\n/).map((line) => `> ${line}`).join("\n")}\n\n`;
-  // A remark with no block and no excerpt (a general comment) is about the whole page.
-  const { tag, selector, text } = record.anchor;
-  const excerpt = withoutMentions(text).replace(/\s+/g, " ").trim();
-  const place = [tag, selector].filter((part) => part.trim()).map(codeSpan).join(" ");
-  const anchor = selector.trim() || excerpt
-    ? [place, excerpt && `"${excerpt}"`].filter(Boolean).join(": ")
-    : "the whole page";
-  return `**Remark** on ${link}, round ${record.round}:\n\n${quote}- Item: ${id}\n- On: ${anchor}\n- Review: ${reviewId}\n\nAnswer with \`plannotator_reply\` on Review ${reviewId} with answers [${id}].`;
+  const remarks = batch.length > 0 ? batch : [record];
+  const sections = remarks.map((remark) => {
+    const quote = `${withoutMentions(remark.text || "(no text)").split(/\r?\n/).map((line) => `> ${line}`).join("\n")}\n\n`;
+    // A remark with no block and no excerpt (a general comment) is about the whole page.
+    const { tag, selector, text } = remark.anchor;
+    const excerpt = withoutMentions(text).replace(/\s+/g, " ").trim();
+    const place = [tag, selector].filter((part) => part.trim()).map(codeSpan).join(" ");
+    const anchor = selector.trim() || excerpt
+      ? [place, excerpt && `"${excerpt}"`].filter(Boolean).join(": ")
+      : "the whole page";
+    return `${quote}- Item: ${codeSpan(remark.id)}\n- On: ${anchor}${remarks.length === 1 ? `\n- Review: ${reviewId}` : ""}`;
+  });
+  const heading = remarks.length === 1
+    ? `**Remark** on ${link}, round ${record.round}:`
+    : `**Remarks** on ${link}, round ${record.round}: ${remarks.length} remarks`;
+  return `${heading}\n\n${sections.join("\n\n")}\n\nAnswer with \`plannotator_reply\` on Review ${reviewId} with answers [${remarks.map((remark) => codeSpan(remark.id)).join(", ")}].`;
 }
 
 const FIRST_RETRY_MS = 1000;
@@ -113,9 +120,14 @@ export class MulticaPoster {
   private async drain(reviewId: string, lane: Lane): Promise<void> {
     const { records, log } = this.options;
     while (!this.closed) {
-      const pending = records.pendingDeliveries(reviewId)[0];
+      const pendingRecords = records.pendingDeliveries(reviewId);
+      const pending = pendingRecords[0];
       if (!pending?.multica) return;
       const record = { ...pending, multica: { ...pending.multica } };
+      const batch = !("type" in pending) && pending.batch_id
+        ? pendingRecords.filter((item): item is StoredRemark => !("type" in item) && item.batch_id === pending.batch_id)
+        : [];
+      const ids = batch.length > 0 ? batch.map((item) => item.id) : [record.id];
       const generation = lane.relinkGeneration;
       let status: number | string = "profile";
       const kind = "type" in record ? record.type : "feedback_item";
@@ -138,7 +150,7 @@ export class MulticaPoster {
             method: "POST",
             headers: { authorization: `Bearer ${profile.token}`, "content-type": "application/json",
               "X-Workspace-ID": record.multica.workspace_id },
-            body: JSON.stringify({ content: buildMulticaComment(review, record) }),
+            body: JSON.stringify({ content: buildMulticaComment(review, record, batch) }),
             redirect: "error",
             signal: AbortSignal.any([this.stopping.signal, AbortSignal.timeout(POST_TIMEOUT_MS)]),
           });
@@ -151,7 +163,7 @@ export class MulticaPoster {
         const comment: unknown = await response.json().catch(() => null);
         const commentId = comment !== null && typeof comment === "object" && "id" in comment &&
           typeof comment.id === "string" && comment.id.trim() ? comment.id : null;
-        if (!await records.markPosted(record.id, commentId, new Date().toISOString(), record.multica)) {
+        if (!await records.markPosted(ids, commentId, new Date().toISOString(), record.multica)) {
           log(`multica pending review=${encodeURIComponent(reviewId)} id=${encodeURIComponent(record.id)} kind=${kind} status=${status} cause=moved`);
           continue;
         }

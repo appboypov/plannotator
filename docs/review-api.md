@@ -38,17 +38,19 @@ The review API lives at the site root and the page under `/plannotator/`, so the
 `GET /api/review/version` returns HTTP 200 with `ApiVersion`:
 
 ```json
-{ "major": 1, "minor": 3 }
+{ "major": 1, "minor": 4 }
 ```
 
 The route is unversioned, so a client can read any major. A client that supports a different `major` must not open, listen or write. `minor` grows with changes a client may ignore: a new field, or a server message it no longer receives (ADR 0008). The constant is `API_VERSION`.
+
+API 1.4 adds the optional `batch_id` send identity to Remarks, listen frames and listed open items. Legacy records remain without it.
 
 ## Health
 
 `GET /plannotator/health` returns HTTP 200 with `HealthResponse` while the service runs:
 
 ```json
-{ "ok": true, "app": "plannotator", "version": "0.27.23", "api": { "major": 1, "minor": 3 } }
+{ "ok": true, "app": "plannotator", "version": "0.27.23", "api": { "major": 1, "minor": 4 } }
 ```
 
 `version` is the fork build version, such as `0.27.23-appboypov.da228139`. When launchd runs the service (`plannotator service install`), health adds `"service": { "label": "nl.de-appspecialist.plannotator" }`.
@@ -118,6 +120,8 @@ Each entry is a `Review`: a `Round` (`review_id`, `round`, `state` of `open`, `f
 `issue` is the stored `{ id, workspace_id }`, or `null` when unlinked. A linked Review's `listeners` is always `[]`, regardless of subscriptions.
 
 With `?file=<absolute path or PR URL>` (`ListReviewsQuery`) the list holds only that subject's Review, and the entry adds `open_items`: its open Remarks as `OpenRemark` (a `Remark` plus `at`, when it was stored), in store order. PR URLs canonicalize through upstream `parsePRUrl` exactly as open does, so an agent's `/files` URL finds the canonical Review. Paths keep their existing symlink resolution. A subject never opened lists `{ "reviews": [] }`. A blank or relative `file` gets 400 `file must be an absolute path`; an unsupported HTTP(S) URL gets 400 naming it. The list writes nothing and fetches no PR.
+
+Each open item includes `batch_id` when stored with one; it is omitted on legacy Remarks.
 
 ## Reply to a Review
 
@@ -233,15 +237,21 @@ The page reads this route each time its annotation panel opens and lists the Rem
 
 ## Comments on the Multica issue
 
-The service posts each Remark, Approve and Close of a linked Review as one top-level comment on its issue within seconds. An agent's Cancel is not posted. No listener receives any linked Review event, live, on replay or on hand-over.
+The service posts each Send feedback of a linked Review as one top-level comment on its issue within seconds: all still-pending Remarks with the same `batch_id` are gathered in store order. Legacy Remarks without `batch_id` post alone. Approve and Close each remain their own comment; an agent's Cancel is not posted. No listener receives any linked Review event, live, on replay or on hand-over.
 
 The author is the member of the Multica CLI profile `PLANNOTATOR_MULTICA_PROFILE` names (`skuddy` in the installed LaunchAgent). Each attempt reads `server_url` and `token` from `~/.multica/profiles/<profile>/config.json`, then sends `POST /api/issues/<issue id>/comments` with bearer authorization and `X-Workspace-ID` from the Review's issue. Credentials never enter review state, the plist or logs.
 
 A Remark comment says **Remark**, links the file name to the Review's current Visibility link, names the Round, quotes each line of the remark's words (`(no text)` for a wordless remark such as a deletion), and lists Item, On (kind, block and one-line excerpt, or the whole page), and Review. It ends with how to answer using `plannotator_reply` with the item id. Approve says **Approved**, quotes notes when present and lists Notice and Review; Close says **Closed … without approving** with the same ids. Code spans use a backtick fence longer than any run in their value. Reviewer text, anchors and notes write `mention://` as `mention:\/\/`, preserving display without forming a Multica mention.
 
+A multi-Remark comment says **Remarks**, links the file name, names the Round and count, then quotes each Remark and lists its Item id and On anchor in store order. It ends with one `plannotator_reply` instruction naming the Review and all item ids. A one-Remark batch keeps the single-Remark text above unchanged.
+
 Each record keeps optional `multica: { issue, workspace_id, status: "pending" | "posted", comment_id?, posted_at? }` in `remarks.json` or `notices.json`. Enrollment is stored with the record before posting. Posting a notice also acknowledges it in that same file write. A posted Remark stays open until a Reply answers it.
 
-Per Review, one record posts at a time in store order (Remarks before notices on a timestamp tie); Reviews post independently. Any 2xx answer counts as posted, keeping the answer's `id` as `comment_id` when it has one. Missing profile, network failure, a redirect, a 15-second timeout or non-2xx leaves delivery pending. Retry doubles from one second to five minutes, resetting after success; startup scans pending records. An open with `issue` rewrites pending destinations, enrolls open Remarks no listener received and the pending Approve/Close of the Round the Review is in after the open, and retries immediately. Which sessions received a Remark is stored, so a Remark a listener received before a restart stays with that listener too. Posted records never move; received or answered Remarks, an earlier Round's Approve/Close, acknowledged notices and Cancels are not enrolled. If a relink races an HTTP attempt, the old response cannot mark the new destination posted; the poster logs it as pending (`moved`) and posts to the new destination.
+All Remarks of a successfully posted batch receive the same comment id and posting time in one atomic `remarks.json` replacement. A destination moved during the post is not marked posted by the old response.
+
+Per Review, one delivery (batch, legacy Remark or notice) posts at a time in store order (Remarks before notices on a timestamp tie); Reviews post independently. Any 2xx answer counts as posted, keeping the answer's `id` as `comment_id` when it has one. Missing profile, network failure, a redirect, a 15-second timeout or non-2xx leaves delivery pending. Retry doubles from one second to five minutes, resetting after success; startup scans pending records. An open with `issue` rewrites pending destinations, enrolls open Remarks no listener received and the pending Approve/Close of the Round the Review is in after the open, and retries immediately. Which sessions received a Remark is stored, so a Remark a listener received before a restart stays with that listener too. Posted records never move; received or answered Remarks, an earlier Round's Approve/Close, acknowledged notices and Cancels are not enrolled. If a relink races an HTTP attempt, the old response cannot mark the new destination posted; the poster logs it as pending (`moved`) and posts to the new destination.
+
+The next pending record determines the delivery: a batched Remark gathers every still-pending Remark of that Review with its `batch_id`; a legacy Remark or notice posts alone. The whole batch stays pending after a failure and retries together.
 
 A successful post whose response is lost can be repeated: delivery is at least once, with the item/notice id identifying duplicates. Logs contain Review id, record id, kind and status only, never words, paths or credentials.
 
@@ -272,6 +282,7 @@ The line holds every listener, so `listeners` in the list and the page's presenc
 {
   "type": "feedback_item",
   "id": "fi_0123456789abcdef01234567",
+  "batch_id": "bt_0123456789abcdef01234567",
   "review_id": "0123456789abcdef",
   "round": 1,
   "text": "Tighten the heading",
@@ -280,6 +291,7 @@ The line holds every listener, so `listeners` in the list and the page's presenc
 ```
 
 - `id`: `fi_` plus 24 lowercase hex characters, unique across Reviews and kept across restarts.
+- `batch_id` (optional since API 1.4): `bt_` plus 24 lowercase hex characters, generated once per Send feedback and shared by all its Remarks. Preserved across restarts and on live/replayed frames and listed open items; omitted for legacy records, never backfilled. A send's frames remain consecutive in store order.
 - `text`: the reviewer's words; `""` for an annotation without words, such as a deletion.
 - `anchor` (`RemarkAnchor`): `selector` is the annotated block's id (`""` for a global comment), `tag` the annotation kind lowercase (`comment`, `deletion`, `global_comment`), `text` the annotated excerpt. Each is `""` when the page sent none.
 - `feedback` (Plannotator's addition, absent when the page sent no text): the page's whole Send feedback text the Remark came with, upstream's agent-facing markdown, which also holds what is not a Remark (question answers, images, code annotations). Every Remark of one Send feedback carries the same text.

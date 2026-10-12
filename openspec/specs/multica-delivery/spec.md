@@ -1,12 +1,12 @@
 # multica-delivery Specification
 
 ## Purpose
-A Review linked to a Multica issue posts each Remark, Approve and Close as a comment on that issue, durably and in order, and its records reach no listener. Code: `packages/server/review-service/multica-poster.ts`; decision: ADR-0010 in `omp-lavish-review`.
+A Review linked to a Multica issue posts each Send feedback, Approve and Close as one comment on that issue, durably and in order, and its records reach no listener. Code: `packages/server/review-service/multica-poster.ts`; decision: ADR-0010 in `omp-lavish-review`.
 
 ## Requirements
 
 ### Requirement: A linked Review posts each Remark to its issue
-The service SHALL post each Remark of a Review linked to a Multica issue as one top-level comment on that issue, as the member of the Multica CLI profile `PLANNOTATOR_MULTICA_PROFILE` names. The comment SHALL hold the remark text, the item id, the anchor (kind, block and excerpt, or the whole page when the anchor is empty), the Review id, the Round, the Review's Link and how to answer with `plannotator_reply`. The remark text SHALL not form a Multica mention.
+The service SHALL post each Send feedback of a Review linked to a Multica issue as one top-level comment on that issue, as the member of the Multica CLI profile `PLANNOTATOR_MULTICA_PROFILE` names. The poster SHALL select the next pending record in store order; a Remark with `batch_id` SHALL gather every still-pending Remark of that Review with the same identity in store order, and a legacy Remark SHALL post alone. The comment SHALL hold each remark's quoted text, item id and anchor (kind, block and excerpt, or the whole page), a header naming the Round, Link and count for multiple Remarks, and one closing `plannotator_reply` instruction with every item id and the Review id. A one-Remark batch SHALL retain the existing comment text. Reviewer words and anchors SHALL not form a Multica mention. Every gathered Remark SHALL be marked posted with the same comment id in one atomic file replacement, guarded against a destination moved during the post. Approve and Close SHALL remain separate comments.
 
 #### Scenario: A page Remark becomes a comment
 - **GIVEN** a Review opened with issue `WORK-1` in workspace `W`
@@ -21,7 +21,17 @@ The service SHALL post each Remark of a Review linked to a Multica issue as one 
 #### Scenario: Several Remarks post in order
 - **GIVEN** a linked Review
 - **WHEN** the reviewer sends three annotations in one Send feedback
-- **THEN** the issue gets three comments, in the order the Remarks were stored
+- **THEN** the issue gets one comment containing all three Remarks in store order and all three item ids in one reply instruction
+
+#### Scenario: Legacy Remarks and separate sends
+- **GIVEN** two pending legacy Remarks and two pending sends with distinct batch identities
+- **WHEN** the poster drains the Review
+- **THEN** each legacy Remark posts alone and each send posts once
+
+#### Scenario: Only pending batch members are posted
+- **GIVEN** a batch with one posted Remark and two pending Remarks
+- **WHEN** the poster drains the Review
+- **THEN** one comment contains only the two pending Remarks and both retain the same new comment id
 
 ### Requirement: A linked Review posts its Approve and Close
 The service SHALL post the Approve and the Close of a linked Review as one top-level comment each on its issue, holding the Round, the notice id, the Review id and the Link, and for an Approve its notes when it has any. Posting a notice SHALL acknowledge it. An agent's Cancel SHALL not be posted.
@@ -42,7 +52,7 @@ The service SHALL post the Approve and the Close of a linked Review as one top-l
 - **THEN** its issue gets no comment
 
 ### Requirement: Delivery to Multica is durable
-Each posted record of a linked Review SHALL carry a delivery state in the Review's folder: the issue and workspace it goes to, pending or posted, and once posted the time and the comment id when the answer has one. Any 2xx answer SHALL count as posted. A Review's records SHALL post one at a time in store order. A failed post SHALL stay pending and retry with a growing wait of at most five minutes, holding only its own Review's later records. A started service SHALL post every pending record. A posted record SHALL not be posted again. An open with `issue` SHALL move the Review's pending records to that issue, and SHALL enroll the Review's open Remarks that no listener received and the pending Approve or Close of the Round the Review is in after the open; received or answered Remarks, an earlier Round's Approve or Close, acknowledged notices and Cancels SHALL stay off it.
+Each posted record of a linked Review SHALL carry a delivery state in the Review's folder: the issue and workspace it goes to, pending or posted, and once posted the time and the comment id when the answer has one. Any 2xx answer SHALL count as posted. A Review's deliveries (one batch, legacy Remark or notice) SHALL post one at a time in store order. A failed post SHALL stay pending and retry with a growing wait of at most five minutes, holding only its own Review's later records. A started service SHALL post every pending record. A posted record SHALL not be posted again. An open with `issue` SHALL move the Review's pending records to that issue, and SHALL enroll the Review's open Remarks that no listener received and the pending Approve or Close of the Round the Review is in after the open; received or answered Remarks, an earlier Round's Approve or Close, acknowledged notices and Cancels SHALL stay off it.
 
 #### Scenario: A failed post retries
 - **GIVEN** a linked Review and a Multica server that refuses the first post

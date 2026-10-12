@@ -110,6 +110,8 @@ export type RemarkAnchor = {
 /** A Remark: one annotation the reviewer sent, stored in its Review's Round. */
 export type Remark = {
   id: RemarkId;
+  /** One reviewer send: `bt_` plus 24 lowercase hex characters; absent on legacy Remarks. */
+  batch_id?: string;
   review_id: ReviewId;
   /** The Round the Remark was sent in. */
   round: number;

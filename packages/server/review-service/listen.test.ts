@@ -245,6 +245,8 @@ describe("Remarks wait for a listener", () => {
 
     const stored = JSON.parse(readFileSync(join(reviewsDir, review.review_id, "remarks.json"), "utf8")).remarks;
     expect(stored).toHaveLength(2);
+    expect(stored[0].batch_id).toMatch(/^bt_[0-9a-f]{24}$/);
+    expect(stored[1].batch_id).toBe(stored[0].batch_id);
 
     const first = await listen("session-a");
     const frames = await subscribe(first, [review.review_id]);
@@ -259,6 +261,7 @@ describe("Remarks wait for a listener", () => {
     });
     expect(deletion).toMatchObject({ text: "", anchor: { selector: "block-1", tag: "deletion", text: "First" } });
     for (const frame of [comment, deletion]) expect("id" in frame && frame.id).toMatch(/^fi_[0-9a-f]{24}$/);
+    for (const frame of [comment, deletion]) expect(frame).toHaveProperty("batch_id", stored[0].batch_id);
 
     first.socket.close();
     await first.closed;
@@ -273,6 +276,7 @@ describe("Remarks wait for a listener", () => {
     const listed = await list(join(dir, "plan.md"));
     expect(listed.reviews[0].open_item_count).toBe(2);
     expect(listed.reviews[0].open_items?.map((item) => item.id)).toEqual(stored.map((remark: { id: string }) => remark.id));
+    expect(listed.reviews[0].open_items?.map((item) => item.batch_id)).toEqual([stored[0].batch_id, stored[0].batch_id]);
     expect(listed.reviews[0].listeners).toEqual(["session-a", "session-b"]);
 
     const from = other.messages.length;
@@ -280,6 +284,9 @@ describe("Remarks wait for a listener", () => {
     again.socket.close();
     await handedOver;
     expect(await typesFrom(other, from)).toEqual(["feedback_item", "feedback_item"]);
+    for (const frame of other.messages.slice(from).filter((item) => item.type === "feedback_item")) {
+      expect(frame).toHaveProperty("batch_id", stored[0].batch_id);
+    }
   });
 
   test("a Remark sent while a session listens arrives live, and the delivery survives a restart", async () => {
@@ -290,7 +297,9 @@ describe("Remarks wait for a listener", () => {
 
     const live = listener.until("feedback_item");
     await sendFeedback(review.link, [COMMENT]);
-    expect((await live).at(-1)).toMatchObject({ type: "feedback_item", text: "Say why." });
+    const delivered = (await live).at(-1);
+    expect(delivered).toMatchObject({ type: "feedback_item", text: "Say why." });
+    expect(delivered && "batch_id" in delivered && delivered.batch_id).toMatch(/^bt_[0-9a-f]{24}$/);
 
     listener.socket.close();
     await service!.stop();
