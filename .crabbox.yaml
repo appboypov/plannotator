@@ -11,5 +11,5 @@ run:
 jobs:
   check:
     shell: true
-    command: bun fork/ci-check.ts
+    command: /work/crabbox/bin/slot bash -c 'bun fork/ci-check.ts'
     stop: auto
