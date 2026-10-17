@@ -1,6 +1,6 @@
 schema: intent-driven
 created: 2026-10-02
-build:
+x-build:
   status: built
   type: fix
   ticket: ''
