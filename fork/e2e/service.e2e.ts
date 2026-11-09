@@ -1,7 +1,7 @@
 /**
  * End-to-end scenarios against the INSTALLED review service: the LaunchAgent
  * `nl.de-appspecialist.plannotator` on 127.0.0.1:4397, the binary at `~/.local/bin/plannotator`
- * and the public door behind https://ctas.de-appspecialist.nl/plannotator/.
+ * and the public door behind https://ctas.deappspecialist.nl/plannotator/.
  *
  *   bun test ./fork/e2e/service.e2e.ts
  *

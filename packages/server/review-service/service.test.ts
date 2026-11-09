@@ -274,7 +274,7 @@ describe("review service", () => {
     expect(await answer.json()).toEqual({
       review_id,
       visibility: "public",
-      link: `https://ctas.de-appspecialist.nl/plannotator/session/${review_id}/`,
+      link: `https://ctas.deappspecialist.nl/plannotator/session/${review_id}/`,
     });
     expect(JSON.parse(readFileSync(join(reviewsDir, review_id, "review.json"), "utf8")).visibility).toBe("public");
   });

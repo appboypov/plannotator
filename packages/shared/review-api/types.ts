@@ -33,7 +33,7 @@ export type IsoTime = string;
 
 /**
  * Who can open a Review's page: `local` (this Mac), `public` (anyone with the link,
- * through ctas.de-appspecialist.nl) or `temporary` (anyone with the link, through ngrok).
+ * through ctas.deappspecialist.nl) or `temporary` (anyone with the link, through ngrok).
  */
 export type Visibility = "local" | "public" | "temporary";
 

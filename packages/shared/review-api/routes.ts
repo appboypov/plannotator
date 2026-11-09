@@ -10,7 +10,7 @@ export const TEMPORARY_PORT = 4398;
 export const PUBLIC_PORT = 4399;
 
 /** The origin a `public` Review's link lives on. */
-export const PUBLIC_ORIGIN = "https://ctas.de-appspecialist.nl";
+export const PUBLIC_ORIGIN = "https://ctas.deappspecialist.nl";
 
 /** The origin a `temporary` Review's link lives on until a setting names another. */
 export const DEFAULT_TEMPORARY_ORIGIN = "https://knowledgeably-supersweet-kizzie.ngrok-free.dev";
