@@ -517,14 +517,6 @@ For every Review a listener holds after a subscription and did not hold before, 
 - **WHEN** a listener `s2` subscribes to Review A
 - **THEN** `s2` receives only `subscribed`
 
-### Requirement: The service posts to Multica as the skuddy profile
-The LaunchAgent plist SHALL set `PLANNOTATOR_MULTICA_PROFILE=skuddy`, so a linked Review's comments post as the member of the Multica CLI profile `skuddy`; `PLANNOTATOR_MULTICA_PROFILE` set in the installing shell SHALL be carried over it. The plist SHALL hold the profile name only, never a token: the service reads the profile's server URL and token from `~/.multica/profiles/<profile>/config.json` at each post.
-
-#### Scenario: The installed service names the profile
-- **GIVEN** the install command has run without `PLANNOTATOR_MULTICA_PROFILE` in its shell
-- **WHEN** launchd starts the service
-- **THEN** its environment has `PLANNOTATOR_MULTICA_PROFILE=skuddy` and no Multica token
-
 ### Requirement: A PR Review serves upstream code review
 The service SHALL start upstream startReviewServer in PR mode on first page request after auth and fetch, on a free loopback port without a checkout. It SHALL retain that page per Round, stop it when the next Round opens, and retry failed startup on the next request. An open of a PR Review whose open Round's page shows a head the PR has since moved from SHALL cancel that Round and start the next; a head that cannot be read SHALL answer 502 and keep the Round. The review app SHALL install session-path base, Round commands and closure cover before rendering.
 

@@ -86,8 +86,6 @@ Set it when opening (`"visibility": "public"`) or at any time with `POST /api/re
 
 Types are in `packages/shared/review-api/`. `plannotator annotate <file>` and a plain `plannotator review <PR_URL>` are clients of this API (`apps/hook/server/annotate-service.ts`, `review-service-client.ts`, ADRs 0007 and 0009); with no service they fail and say to start it. Other upstream modes keep their one-shot server.
 
-Open with optional `issue: { id, workspace_id }` to send each Send feedback, Approve and Close to that Multica issue as a member comment instead of listener events. Remarks from one send share a durable `batch_id` and one comment with all their answerable item ids; legacy Remarks without it post alone. The service requires `PLANNOTATOR_MULTICA_PROFILE`; linked Reviews return `issue` and `listeners: []`, unlinked ones return `issue: null`. Opening without issue keeps it; with another replaces it and redirects pending deliveries. Failed posts retry durably in store order. See "Comments on the Multica issue" in the API contract.
-
 ## Settings
 
 `plannotator serve` reads these from its environment; `plannotator service install` carries each one that is set in the installing shell into the LaunchAgent's plist, over the live values, and prints what it installed.
@@ -103,7 +101,6 @@ Open with optional `issue: { id, workspace_id }` to send each Send feedback, App
 | `PLANNOTATOR_TEMPORARY_PORT` | unset (`4398` in the plist) | The temporary door's port on 127.0.0.1; unset or `off` opens no temporary door. |
 | `PLANNOTATOR_TEMPORARY_ORIGIN` | `https://knowledgeably-supersweet-kizzie.ngrok-free.dev` | The origin of `temporary` links and the one host the temporary door answers. |
 | `PLANNOTATOR_SERVICE_LABEL` | set by the plist | The LaunchAgent label health reports; not carried. |
-| `PLANNOTATOR_MULTICA_PROFILE` | unset (`skuddy` in the plist) | CLI profile whose member posts linked Review events; reads `~/.multica/profiles/<profile>/config.json` on each attempt. Only the profile name is carried, never a token. |
 
 Upstream's own settings, such as `PLANNOTATOR_BROWSER` and `PLANNOTATOR_SKIP_BROWSER_OPEN`, apply to `annotate` as upstream documents them.
 
@@ -123,7 +120,7 @@ Logs: `~/Library/Logs/plannotator/nl.de-appspecialist.plannotator.log`. The plis
 Review state lives in `~/.plannotator/reviews/<review_id>/`; a dev run keeps its own folder and port, and opens no door as long as its shell leaves the door port settings unset. After `bun run build:review && bun run build:hook`:
 
 ```sh
-PLANNOTATOR_PUBLIC_PORT=off PLANNOTATOR_TEMPORARY_PORT=off PLANNOTATOR_MULTICA_PROFILE=skuddy PLANNOTATOR_REVIEWS_DIR=/tmp/pn-reviews-work-167 bun apps/hook/server/index.ts serve --port 4497
+PLANNOTATOR_PUBLIC_PORT=off PLANNOTATOR_TEMPORARY_PORT=off PLANNOTATOR_REVIEWS_DIR=/tmp/pn-reviews-work-167 bun apps/hook/server/index.ts serve --port 4497
 ```
 
 Code: `packages/server/review-service/` and `apps/hook/server/serve-command.ts`. The plan page calls upstream's root `/api/...` paths; under a session path `packages/shared/review-api/page-base.ts`, installed first by `apps/hook/review-page-base.ts`, sends those `fetch`, `EventSource`, `WebSocket` and image calls to `<page path>api/...` (`adr/0005-one-upstream-annotate-server-per-review.md`). Specs: `openspec/specs/`.

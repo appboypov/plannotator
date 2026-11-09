@@ -14,7 +14,6 @@ import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import type {
   IsoTime,
-  MulticaIssue,
   Notice,
   OpenRemark,
   Remark,
@@ -39,29 +38,18 @@ export const REPLIES_FILE = "replies.json";
 
 type RecordFile = typeof REMARKS_FILE | typeof NOTICES_FILE | typeof REPLIES_FILE;
 
-/** Delivery belongs to the record, so posted records never move on a relink. */
-export type MulticaDelivery = {
-  issue: string;
-  workspace_id: string;
-  status: "pending" | "posted";
-  comment_id?: string;
-  posted_at?: IsoTime;
-};
-
 /** What the service keeps per Remark: the Remark, when it was stored, and who has it. */
 export type StoredRemark = Remark & {
   at: IsoTime;
   status: RemarkStatus;
   /** Listener sessions the Remark was delivered to, each once, in delivery order. */
   delivered_to: SessionId[];
-  multica?: MulticaDelivery;
 };
 
 /** What the service keeps per notice: the notice and whether a listener acknowledged it. */
 export type StoredNotice = Notice & {
   status: "pending" | "acknowledged";
   acknowledged_at?: IsoTime;
-  multica?: MulticaDelivery;
 };
 
 /** One record a subscription replays, in the order the Review stored them. */
@@ -149,7 +137,7 @@ export function openRemark(remark: StoredRemark): OpenRemark {
 
 /** [notice] as the listen socket's frame. */
 export function noticeEvent(notice: StoredNotice): Notice {
-  const { status: _status, acknowledged_at: _acknowledged, multica: _multica, ...event } = notice;
+  const { status: _status, acknowledged_at: _acknowledged, ...event } = notice;
   return event;
 }
 
@@ -166,7 +154,6 @@ export class ReviewRecords {
     private readonly remarks: Map<ReviewId, StoredRemark[]>,
     private readonly notices: Map<ReviewId, StoredNotice[]>,
     private readonly replies: Map<ReviewId, Reply[]>,
-    private readonly issueOf: (reviewId: ReviewId) => MulticaIssue | null,
   ) {}
 
   /** Reads the records of [reviewIds]; a missing file is none, an unreadable one is logged and kept. */
@@ -174,7 +161,6 @@ export class ReviewRecords {
     reviewIds: readonly ReviewId[],
     folder: (reviewId: ReviewId) => string,
     log: (line: string) => void,
-    issueOf: (reviewId: ReviewId) => MulticaIssue | null = () => null,
   ): Promise<ReviewRecords> {
     const remarks = new Map<ReviewId, StoredRemark[]>();
     const notices = new Map<ReviewId, StoredNotice[]>();
@@ -192,7 +178,7 @@ export class ReviewRecords {
       const answered = new Set((storedReplies ?? []).flatMap((reply) => reply.answers));
       for (const remark of storedRemarks ?? []) if (answered.has(remark.id)) remark.status = "answered";
     }
-    return new ReviewRecords(folder, remarks, notices, replies, issueOf);
+    return new ReviewRecords(folder, remarks, notices, replies);
   }
 
   /** The Reviews holding records, in the order their first record was stored or loaded. */
@@ -223,74 +209,8 @@ export class ReviewRecords {
     }
     return merged;
   }
-
-  /** Pending deliveries, including Remarks answered since enrollment, in store order. */
-  pendingDeliveries(reviewId: ReviewId): (StoredRemark | StoredNotice)[] {
-    return [...(this.remarks.get(reviewId) ?? []), ...(this.notices.get(reviewId) ?? [])]
-      .filter((record) => record.multica?.status === "pending")
-      .sort((a, b) => a.at.localeCompare(b.at) || Number("type" in a) - Number("type" in b));
-  }
-
-  /**
-   * Move only pending deliveries; enroll open Remarks no listener received and the Finish of [round],
-   * the Round the Review is in after the open. One write per changed file.
-   */
-  async relink(reviewId: ReviewId, issue: MulticaIssue, round: number): Promise<void> {
-    const delivery = (): MulticaDelivery => ({ issue: issue.id, workspace_id: issue.workspace_id, status: "pending" });
-    const changed = new Set<RecordFile>();
-    for (const remark of this.remarks.get(reviewId) ?? []) {
-      if (remark.multica?.status === "pending" ||
-          (!remark.multica && remark.status === "open" && remark.delivered_to.length === 0)) {
-        remark.multica = delivery();
-        changed.add(REMARKS_FILE);
-      }
-    }
-    for (const notice of this.notices.get(reviewId) ?? []) {
-      if (notice.type === "finish" && (notice.multica?.status === "pending" ||
-          (!notice.multica && notice.status === "pending" && notice.round === round))) {
-        notice.multica = delivery();
-        changed.add(NOTICES_FILE);
-      }
-    }
-    await Promise.all([...changed].map((file) => this.write(reviewId, file)));
-  }
-
-  /**
-   * Persist a successful delivery together, with one write per record file. Validate
-   * every destination before changing any member, so a relink cannot split a batch.
-   */
-  async markPosted(ids: readonly string[], commentId: string | null, at: IsoTime, destination?: MulticaDelivery): Promise<boolean> {
-    if (ids.length === 0) return false;
-    const selected = new Set(ids);
-    for (const reviewId of this.reviewIds()) {
-      const records = [...(this.remarks.get(reviewId) ?? []), ...(this.notices.get(reviewId) ?? [])]
-        .filter((entry) => selected.has(entry.id));
-      if (records.length !== selected.size) continue;
-      if (records.some((record) => record.multica?.status !== "pending" || (destination &&
-          (record.multica.issue !== destination.issue || record.multica.workspace_id !== destination.workspace_id)))) return false;
-      const files = new Set<RecordFile>();
-      for (const record of records) {
-        record.multica = { ...record.multica!, status: "posted", ...(commentId ? { comment_id: commentId } : {}), posted_at: at };
-        if ("type" in record) {
-          record.status = "acknowledged";
-          record.acknowledged_at = at;
-          files.add(NOTICES_FILE);
-        } else {
-          files.add(REMARKS_FILE);
-        }
-      }
-      await Promise.all([...files].map((file) => this.write(reviewId, file)));
-      return true;
-    }
-    return false;
-  }
-
   /** Appends [added] to the Review's Remarks and writes them. */
   addRemarks(reviewId: ReviewId, added: readonly StoredRemark[]): Promise<void> {
-    const issue = this.issueOf(reviewId);
-    if (issue) for (const remark of added) {
-      remark.multica = { issue: issue.id, workspace_id: issue.workspace_id, status: "pending" };
-    }
     this.remarks.set(reviewId, [...(this.remarks.get(reviewId) ?? []), ...added]);
     return this.write(reviewId, REMARKS_FILE);
   }
@@ -305,10 +225,6 @@ export class ReviewRecords {
 
   /** Appends [notice] to its Review's notices and writes them. */
   addNotice(notice: StoredNotice): Promise<void> {
-    const issue = this.issueOf(notice.review_id);
-    if (issue && notice.type === "finish") {
-      notice.multica = { issue: issue.id, workspace_id: issue.workspace_id, status: "pending" };
-    }
     this.notices.set(notice.review_id, [...(this.notices.get(notice.review_id) ?? []), notice]);
     return this.write(notice.review_id, NOTICES_FILE);
   }
@@ -341,7 +257,7 @@ export class ReviewRecords {
     return {
       review_id: reviewId,
       remarks: (this.remarks.get(reviewId) ?? []).map((remark) => {
-        const { delivered_to: _deliveredTo, multica: _multica, ...shown } = remark;
+        const { delivered_to: _deliveredTo, ...shown } = remark;
         return { ...shown, replies: replies.filter((reply) => reply.answers.includes(remark.id)) };
       }),
       replies: replies.filter((reply) => reply.answers.length === 0),
@@ -449,8 +365,6 @@ function parseRemark(value: unknown, reviewId: ReviewId): StoredRemark | undefin
   const feedback = field(value, "feedback");
   const batch_id = field(value, "batch_id");
   if (batch_id !== undefined && (typeof batch_id !== "string" || !/^bt_[0-9a-f]{24}$/.test(batch_id))) return undefined;
-  const multica = parseDelivery(field(value, "multica"));
-  if (multica === null) return undefined;
   return {
     id,
     ...(batch_id === undefined ? {} : { batch_id }),
@@ -462,7 +376,6 @@ function parseRemark(value: unknown, reviewId: ReviewId): StoredRemark | undefin
     at,
     status,
     delivered_to: deliveredTo,
-    ...(multica ? { multica } : {}),
   };
 }
 
@@ -478,8 +391,6 @@ function parseNotice(value: unknown, reviewId: ReviewId): StoredNotice | undefin
   if (field(value, "review_id") !== reviewId || typeof round !== "number" || typeof at !== "string") return undefined;
   if (status !== "pending" && status !== "acknowledged") return undefined;
   if (acknowledgedAt !== undefined && typeof acknowledgedAt !== "string") return undefined;
-  const multica = parseDelivery(field(value, "multica"));
-  if (multica === null) return undefined;
   const kept: Omit<StoredNotice, "type" | "notes"> = {
     id,
     review_id: reviewId,
@@ -487,7 +398,6 @@ function parseNotice(value: unknown, reviewId: ReviewId): StoredNotice | undefin
     at,
     status,
     ...(acknowledgedAt === undefined ? {} : { acknowledged_at: acknowledgedAt }),
-    ...(multica ? { multica } : {}),
   };
   if (type === "finish" && typeof notes === "string") {
     return { type, ...kept, notes, ...(field(value, "dismissed") === true ? { dismissed: true } : {}) };
@@ -505,18 +415,4 @@ function parseReply(value: unknown, reviewId: ReviewId): Reply | undefined {
   if (field(value, "review_id") !== reviewId || typeof replyText !== "string" || typeof at !== "string") return undefined;
   if (!Array.isArray(answers) || !answers.every((answer) => typeof answer === "string")) return undefined;
   return { id, review_id: reviewId, text: replyText, answers, at };
-}
-
-function parseDelivery(value: unknown): MulticaDelivery | null | undefined {
-  if (value === undefined) return undefined;
-  const issue = field(value, "issue");
-  const workspace = field(value, "workspace_id");
-  const status = field(value, "status");
-  const comment = field(value, "comment_id");
-  const at = field(value, "posted_at");
-  if (typeof issue !== "string" || !issue.trim() || typeof workspace !== "string" || !workspace.trim() ||
-      (status !== "pending" && status !== "posted") ||
-      (comment !== undefined && typeof comment !== "string") || (at !== undefined && typeof at !== "string")) return null;
-  return { issue, workspace_id: workspace, status,
-    ...(comment === undefined ? {} : { comment_id: comment }), ...(at === undefined ? {} : { posted_at: at }) };
 }

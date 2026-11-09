@@ -10,7 +10,7 @@ export const REVIEW_FILE = "review.json";
 /** What a Review keeps on disk; the list adds its link, Remark count and listeners. */
 export type StoredReview = Pick<
   Review,
-  "review_id" | "file" | "visibility" | "round" | "state" | "round_opened_at" | "last_page_open" | "issue"
+  "review_id" | "file" | "visibility" | "round" | "state" | "round_opened_at" | "last_page_open"
 > & {
   /** A PR Review: the head its open Round's first page showed, kept so a restart still sees the head move. */
   round_head?: string;
@@ -107,14 +107,6 @@ export function parseStoredReview(value: unknown, folderId: string): StoredRevie
   if (typeof round !== "number" || !Number.isInteger(round) || round < 1) return undefined;
   if (typeof state !== "string" || !STATES.includes(state)) return undefined;
   if (!isTimeOrNull(round_opened_at) || !isTimeOrNull(last_page_open)) return undefined;
-  let issue: StoredReview["issue"] = null;
-  if (fields.issue != null) {
-    if (typeof fields.issue !== "object" || Array.isArray(fields.issue)) return undefined;
-    const link = fields.issue as Record<string, unknown>;
-    if (typeof link.id !== "string" || !link.id.trim() ||
-        typeof link.workspace_id !== "string" || !link.workspace_id.trim()) return undefined;
-    issue = { id: link.id.trim(), workspace_id: link.workspace_id.trim() };
-  }
   if (fields.round_head !== undefined && typeof fields.round_head !== "string") return undefined;
   return {
     review_id,
@@ -124,7 +116,6 @@ export function parseStoredReview(value: unknown, folderId: string): StoredRevie
     state: state as StoredReview["state"],
     round_opened_at,
     last_page_open,
-    issue,
     ...(typeof fields.round_head === "string" ? { round_head: fields.round_head } : {}),
   };
 }
