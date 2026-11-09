@@ -1,6 +1,6 @@
 # appboypov/plannotator fork
 
-Brian's fork of [backnotprop/plannotator](https://github.com/backnotprop/plannotator). It follows upstream releases and adds an always-on review service for Markdown documents and pull/merge requests, the Plannotator peer of `~/Repos/Forks/pew-pew-lavish`: one lasting link per canonical subject, Rounds, Remarks and Replies that outlive an agent session, a versioned review API with a listen socket, a public door behind `https://ctas.de-appspecialist.nl/plannotator/`, a temporary door for ngrok, and launchd supervision.
+Brian's fork of [backnotprop/plannotator](https://github.com/backnotprop/plannotator). It follows upstream releases and adds an always-on review service for Markdown documents and pull/merge requests, the Plannotator peer of `~/Repos/Forks/pew-pew-lavish`: one lasting link per canonical subject, Rounds, Remarks and Replies that outlive an agent session, a versioned review API with a listen socket, a public door behind `https://ctas.deappspecialist.nl/plannotator/`, a temporary door for ngrok, and launchd supervision.
 
 This file is the fork's README: the root `README.md` is upstream's and only points here, so upstream releases merge without conflicts there. `docs/invariants.md` holds the internals and the rules that are easy to break; `docs/review-api.md` is the wire contract.
 
@@ -59,7 +59,7 @@ The service is one process with up to three listeners. Each serves a fixed set o
 | Door | Address | Who may connect | What it serves |
 |---|---|---|---|
 | Service | `127.0.0.1:4397` | Processes on this Mac: the browser, `plannotator annotate`, the omp plugin. `Host` must be `127.0.0.1` or `localhost`; a `POST` or listen handshake with a foreign `Origin` or `Referer` gets 403. | Everything: the review API, the listen socket, health, and every Review's page whatever its Visibility. |
-| Public | `100.111.186.85:4399` (this Mac's Tailscale address) | Only `100.67.134.112`, the VPS, whose Caddy routes `https://ctas.de-appspecialist.nl/plannotator/*` to it. | Health and the pages of `public` Reviews. |
+| Public | `100.111.186.85:4399` (this Mac's Tailscale address) | Only `100.67.134.112`, the VPS, whose Caddy routes `https://ctas.deappspecialist.nl/plannotator/*` to it. | Health and the pages of `public` Reviews. |
 | Temporary | `127.0.0.1:4398` | Only `127.0.0.1`, the ngrok agent on this Mac (`ngrok http 4398 --url=https://knowledgeably-supersweet-kizzie.ngrok-free.dev`). | Health and the pages of `temporary` Reviews, for that one host. |
 
 The two doors answer 404 to the review API, the listen socket, every WebSocket and every page route outside their list (`packages/server/review-service/door-manifest.ts`), and to any Review whose Visibility is not theirs at the moment of the request. Each Review page also runs an upstream annotate server on a free loopback port, which only the service is told and forwards to. A door opens only when its port setting is set: the LaunchAgent sets both, and `plannotator serve` run by hand in a shell without `PLANNOTATOR_PUBLIC_PORT` and `PLANNOTATOR_TEMPORARY_PORT` opens none. Details: "The doors" in `docs/review-api.md`, `adr/0007-doors-serve-only-their-visibility.md`.
@@ -69,7 +69,7 @@ The two doors answer 404 to the review API, the listen socket, every WebSocket a
 Every Review has one Visibility, which picks its link and the door that serves it:
 
 - `local` (the default): `http://127.0.0.1:4397/plannotator/session/<review_id>/`, this Mac only.
-- `public`: `https://ctas.de-appspecialist.nl/plannotator/session/<review_id>/`, anyone with the link.
+- `public`: `https://ctas.deappspecialist.nl/plannotator/session/<review_id>/`, anyone with the link.
 - `temporary`: `https://knowledgeably-supersweet-kizzie.ngrok-free.dev/plannotator/session/<review_id>/`, anyone with the link while the ngrok tunnel runs (ngrok's free plan shows a warning page first).
 
 Set it when opening (`"visibility": "public"`) or at any time with `POST /api/review/v1/reviews/<review_id>/visibility` `{"visibility":"public"}`; the answer carries the new link. A change takes effect on the next request, and open connections through the old door close at once.
@@ -146,7 +146,7 @@ crabbox job run check
 
 ### End-to-end against the installed service
 
-`fork/e2e/service.e2e.ts` runs against the live install on this Mac, not a dev run: the LaunchAgent on 127.0.0.1:4397, `~/.local/bin/plannotator` and the public door behind `https://ctas.de-appspecialist.nl/plannotator/`. Run it on purpose, after an install or update:
+`fork/e2e/service.e2e.ts` runs against the live install on this Mac, not a dev run: the LaunchAgent on 127.0.0.1:4397, `~/.local/bin/plannotator` and the public door behind `https://ctas.deappspecialist.nl/plannotator/`. Run it on purpose, after an install or update:
 
 ```sh
 bun test ./fork/e2e/service.e2e.ts

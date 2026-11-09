@@ -8,7 +8,7 @@ Accepted
 
 ## Context
 
-The service listens on 127.0.0.1 and answers only this Mac (ADR 0004). A Review's Visibility (`public`, `temporary`) promises its page to clients elsewhere: through `https://ctas.de-appspecialist.nl`, where Caddy on the VPS routes `/plannotator/*` over Tailscale to this Mac, and through an ngrok tunnel. Opening the service itself to those clients would expose the review API, the listen socket and every upstream page route that reads this Mac's disk. Lavish solved the same problem with a door per Visibility (its ADR 0008).
+The service listens on 127.0.0.1 and answers only this Mac (ADR 0004). A Review's Visibility (`public`, `temporary`) promises its page to clients elsewhere: through `https://ctas.deappspecialist.nl`, where Caddy on the VPS routes `/plannotator/*` over Tailscale to this Mac, and through an ngrok tunnel. Opening the service itself to those clients would expose the review API, the listen socket and every upstream page route that reads this Mac's disk. Lavish solved the same problem with a door per Visibility (its ADR 0008).
 
 ## Decision
 

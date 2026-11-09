@@ -10,7 +10,7 @@ The types live in `packages/shared/review-api/` (import `@plannotator/shared/rev
 - **Round**: a numbered pass over a Review, starting at 1. Approve finishes it, Cancel cancels it, reopening starts the next Round on the same link and fetches a PR's current head.
 - **Remark**: one annotation the reviewer sent with Send feedback. On the wire it is a `feedback_item` with an `fi_` id, as in Lavish.
 - **Reply**: an agent's answer, shown on the page beside the Remarks it answers.
-- **Visibility**: who can open the page. `local` (this Mac), `public` (anyone with the link, through `https://ctas.de-appspecialist.nl`) or `temporary` (anyone with the link, through the ngrok host).
+- **Visibility**: who can open the page. `local` (this Mac), `public` (anyone with the link, through `https://ctas.deappspecialist.nl`) or `temporary` (anyone with the link, through the ngrok host).
 
 ## Routes
 
@@ -84,7 +84,7 @@ HTTP 200 with `OpenReviewResponse`:
 - `status` is `opened`, or `user-ended` when the reviewer finished the Review and `reopen` was not set: the Round stays ended; an explicit `issue` can still update its link.
 - Opening an ended Review with `reopen` starts the next Round on the same `review_id` and `link`; opening an open Review returns its current Round and can update its Visibility or issue.
 - Opening a PR Review whose open Round's page shows a head the PR has since moved from, also when the service restarted in between, cancels that Round with a Cancel notice and starts the next, whose page shows the current head. Open pages close on the Round stream and the old Round's commands answer 409, so an Approve passes only the head the reviewer saw.
-- `link` is the Review's page for its Visibility (`reviewLink` in `routes.ts`): the path is always `/plannotator/session/<review_id>/`, the origin is `http://127.0.0.1:4397` for `local`, `https://ctas.de-appspecialist.nl` for `public` and the ngrok host for `temporary`.
+- `link` is the Review's page for its Visibility (`reviewLink` in `routes.ts`): the path is always `/plannotator/session/<review_id>/`, the origin is `http://127.0.0.1:4397` for `local`, `https://ctas.deappspecialist.nl` for `public` and the ngrok host for `temporary`.
 
 Errors: absent or blank `file` 400 `file path required`; a relative `file` 400 `file must be an absolute path`; a `reopen` that is not a boolean 400 `reopen must be a boolean`; a `visibility` outside the three 400 `visibility must be local, public or temporary`; a missing file 404 with an `error` naming it; a PR head that cannot be read for an open Round 502 `could not read the pull request's head: <cause>`, keeping the Round. None creates a Review.
 
@@ -100,7 +100,7 @@ An invalid `issue` gets 400 `{ "error": "issue requires nonempty id and workspac
   "reviews": [
     {
       "review_id": "0123456789abcdef",
-      "link": "https://ctas.de-appspecialist.nl/plannotator/session/0123456789abcdef/",
+      "link": "https://ctas.deappspecialist.nl/plannotator/session/0123456789abcdef/",
       "file": "/absolute/path/to/plan.md",
       "visibility": "public",
       "issue": null,
@@ -325,7 +325,7 @@ The server pings every 30 seconds and drops a listener that did not answer the p
 
 A door is a second listener that lets clients elsewhere open the pages of Reviews with its Visibility, and nothing else (ADR 0007, `packages/server/review-service/doors.ts`).
 
-- **The public door** serves `public` Reviews for `https://ctas.de-appspecialist.nl`, where Caddy on the VPS routes `/plannotator/*` over Tailscale to it. It binds `PLANNOTATOR_PUBLIC_HOST`:`PLANNOTATOR_PUBLIC_PORT` (host default `100.111.186.85`) and accepts only `PLANNOTATOR_PUBLIC_PEER` (default the VPS, `100.67.134.112`). A failed bind (Tailscale not up yet) is logged and retried every 30 seconds.
+- **The public door** serves `public` Reviews for `https://ctas.deappspecialist.nl`, where Caddy on the VPS routes `/plannotator/*` over Tailscale to it. It binds `PLANNOTATOR_PUBLIC_HOST`:`PLANNOTATOR_PUBLIC_PORT` (host default `100.111.186.85`) and accepts only `PLANNOTATOR_PUBLIC_PEER` (default the VPS, `100.67.134.112`). A failed bind (Tailscale not up yet) is logged and retried every 30 seconds.
 - **The temporary door** serves `temporary` Reviews for the ngrok tunnel (`ngrok http 4398 --url=<origin>`). It binds `127.0.0.1:PLANNOTATOR_TEMPORARY_PORT` and accepts only `127.0.0.1`, ngrok's agent on this Mac; neither is a setting. `PLANNOTATOR_TEMPORARY_ORIGIN` (an http or https origin, default `https://knowledgeably-supersweet-kizzie.ngrok-free.dev`) is the origin of `temporary` links and the one host the door answers. ngrok's free plan shows a warning page unless the client sends `ngrok-skip-browser-warning`.
 - **Which doors open:** a door opens only when its port is set; `off` or unset opens none. `plannotator serve` run by hand opens no door. The LaunchAgent (`plannotator service install`) runs the live doors, public `100.111.186.85:4399` for `100.67.134.112` and temporary `127.0.0.1:4398`, unless the installing shell names other settings.
 - **Peer:** a socket from any other address is destroyed on connect, before a byte is read; each refused address is logged once per minute.
@@ -333,7 +333,7 @@ A door is a second listener that lets clients elsewhere open the pages of Review
 - **Live PR context:** `GET api/pr-context/stream` is also a PR-only door read, with no query parameters. The code review page uses this SSE stream for comments, checks and merge status.
 - **Diff files only:** through a door, `api/file-content` answers 404 unless its `path`, and its `oldPath` when given, belong to a file of the Round's patch, the patch the PR page was started with. The page server reads any other path of the repository with the provider token, so the service refuses it before forwarding.
 - **Visibility per request:** a page route answers 404 unless the Review's Visibility is the door's at that moment. Changing a Review's Visibility away from the door's closes its open requests through the door, such as the Round stream.
-- **Hosts:** `Host` and the last `X-Forwarded-Host` must be one of the door's hostnames, else 404: for the public door `ctas.de-appspecialist.nl` or the door's own address, for the temporary door only the host of `PLANNOTATOR_TEMPORARY_ORIGIN`.
+- **Hosts:** `Host` and the last `X-Forwarded-Host` must be one of the door's hostnames, else 404: for the public door `ctas.deappspecialist.nl` or the door's own address, for the temporary door only the host of `PLANNOTATOR_TEMPORARY_ORIGIN`.
 - **Rate limit:** 300 requests per visitor per minute, keyed on the last `X-Forwarded-For` entry (else the socket address); over it HTTP 429 with `Retry-After`.
 - **Framing:** every answer carries `content-security-policy: frame-ancestors 'none'` and `x-frame-options: DENY`.
 - **No local paths:** through a door, `api/plan` gives `filePath` and `sourceInfo` as the file name, drops `projectRoot`, `repoInfo` and `serverConfig.gitUser`, and turns off source save and the agent terminal. PR diff and freshness responses drop `agentCwd`, `gitContext`, `repoInfo`, `aiReviewContext`, `platformUser` and `serverConfig.gitUser`, and advertise AI as disabled.

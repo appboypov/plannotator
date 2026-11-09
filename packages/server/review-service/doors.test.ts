@@ -79,7 +79,7 @@ test("the public door serves public Reviews and their page only, without this Ma
   const door = await start(LOOPBACK_DOOR);
   const shared = await openReview("shared.md", "public");
   const local = await openReview("local.md", "local");
-  expect(shared.link).toBe(`https://ctas.de-appspecialist.nl/plannotator/session/${shared.review_id}/`);
+  expect(shared.link).toBe(`https://ctas.deappspecialist.nl/plannotator/session/${shared.review_id}/`);
   const page = `/plannotator/session/${shared.review_id}/`;
 
   const health = await fetch(`${door}/plannotator/health`);
@@ -146,7 +146,7 @@ test("the door answers only its hostnames and refuses WebSockets", async () => {
   const shared = await openReview("shared.md", "public");
   const page = `${door}/plannotator/session/${shared.review_id}/`;
 
-  expect((await fetch(page, { headers: { host: "ctas.de-appspecialist.nl" } })).status).toBe(200);
+  expect((await fetch(page, { headers: { host: "ctas.deappspecialist.nl" } })).status).toBe(200);
   expect((await fetch(page, { headers: { host: "evil.example" } })).status).toBe(404);
   expect((await fetch(page, { headers: { "x-forwarded-host": "evil.example" } })).status).toBe(404);
 
@@ -228,8 +228,8 @@ test("the temporary door serves temporary Reviews for the link's host only; the 
   }
   // The door's own loopback address and the ctas host are not the link's host.
   expect((await fetch(`${temporaryDoor}${page}`)).status).toBe(404);
-  expect((await fetch(`${temporaryDoor}${page}`, { headers: { host: "ctas.de-appspecialist.nl" } })).status).toBe(404);
-  expect((await fetch(`${publicDoor}${page}`, { headers: { host: "ctas.de-appspecialist.nl" } })).status).toBe(404);
+  expect((await fetch(`${temporaryDoor}${page}`, { headers: { host: "ctas.deappspecialist.nl" } })).status).toBe(404);
+  expect((await fetch(`${publicDoor}${page}`, { headers: { host: "ctas.deappspecialist.nl" } })).status).toBe(404);
 
   const socket = new WebSocket(`${temporaryDoor.replace("http", "ws")}/api/review/v1/listen?session=s1`, { headers: NGROK });
   const outcome = Promise.withResolvers<string>();

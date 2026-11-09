@@ -49,7 +49,7 @@ The service SHALL write each Review's state to `<reviews dir>/<review_id>/review
 #### Scenario: A Visibility change is kept
 - **GIVEN** an open local Review
 - **WHEN** a client posts `{ "visibility": "public" }` to its visibility route
-- **THEN** the answer's `link` is on `https://ctas.de-appspecialist.nl` and the Review's `review.json` holds `public`
+- **THEN** the answer's `link` is on `https://ctas.deappspecialist.nl` and the Review's `review.json` holds `public`
 
 ### Requirement: The Review page is upstream's plan page under its own path
 The service SHALL serve each Review's page at `/plannotator/session/<review_id>/` by forwarding `/plannotator/session/<review_id>/<rest>` to `/<rest>` on an upstream page server. A document uses the annotate server with the plan page; a PR uses the code review server with the review page. The page SHALL start on first request and remain for its Round. `GET /plannotator/session/<review_id>/api/plan` for a document SHALL answer upstream's plan payload whose `plan` is the file content. A page path without its trailing slash SHALL redirect (308) to the path with it. An unknown id SHALL answer HTTP 404 `{ "error": "review not found" }`. A page whose server cannot start SHALL answer HTTP 502 `{ "error": "page failed to start: <reason>" }` and SHALL be tried again on the next request.
@@ -300,7 +300,7 @@ The service SHALL run a public door that accepts connections only from its confi
 
 - **GIVEN** the service runs with its public door
 - **AND** a Review is `public`
-- **WHEN** a client opens `https://ctas.de-appspecialist.nl/plannotator/session/<review_id>/`
+- **WHEN** a client opens `https://ctas.deappspecialist.nl/plannotator/session/<review_id>/`
 - **THEN** the page loads with HTTP 200 and `x-frame-options: DENY`
 
 #### Scenario: A local Review stays on this Mac
@@ -390,7 +390,7 @@ The service SHALL run a temporary door on `127.0.0.1` that accepts connections o
 
 - **GIVEN** the service runs with its temporary door
 - **AND** a Review is `temporary`
-- **WHEN** a client asks the door for its page with the host `127.0.0.1:4398` or `ctas.de-appspecialist.nl`
+- **WHEN** a client asks the door for its page with the host `127.0.0.1:4398` or `ctas.deappspecialist.nl`
 - **THEN** the answer is HTTP 404
 
 #### Scenario: A temporary Review made public closes its open page stream through the temporary door
@@ -424,7 +424,7 @@ The service SHALL run a temporary door on `127.0.0.1` that accepts connections o
 
 ### Requirement: An end-to-end suite proves the installed service
 
-`bun test ./fork/e2e/service.e2e.ts` SHALL run against the installed service (the LaunchAgent on 127.0.0.1:4397, `~/.local/bin/plannotator`, the public door behind `https://ctas.de-appspecialist.nl/plannotator/`) and SHALL prove: two documents open at once, a Remark sent while no one listens reaches a later listener, `plannotator annotate --gate --json` returns approved when the page approves, and the public door refuses a local Review. Each scenario SHALL use scratch files and cancel its Reviews after. The suite SHALL NOT be picked up by `bun test`'s default globs and SHALL never skip.
+`bun test ./fork/e2e/service.e2e.ts` SHALL run against the installed service (the LaunchAgent on 127.0.0.1:4397, `~/.local/bin/plannotator`, the public door behind `https://ctas.deappspecialist.nl/plannotator/`) and SHALL prove: two documents open at once, a Remark sent while no one listens reaches a later listener, `plannotator annotate --gate --json` returns approved when the page approves, and the public door refuses a local Review. Each scenario SHALL use scratch files and cancel its Reviews after. The suite SHALL NOT be picked up by `bun test`'s default globs and SHALL never skip.
 
 #### Scenario: The suite passes on the installed service
 

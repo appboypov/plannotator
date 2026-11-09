@@ -42,7 +42,7 @@ The service SHALL serve open (`POST /api/review/v1/reviews`), list (`GET /api/re
 - **THEN** the answer is HTTP 404 `{ "error": "review not found" }`
 
 ### Requirement: Three Visibilities with one page path
-A Review's Visibility SHALL be `local`, `public` or `temporary`. Its link SHALL keep the path `/plannotator/session/<review_id>/` and take the origin of its Visibility: the service's own address, `https://ctas.de-appspecialist.nl`, or the ngrok host. Any other Visibility SHALL be refused with HTTP 400 `visibility must be local, public or temporary`.
+A Review's Visibility SHALL be `local`, `public` or `temporary`. Its link SHALL keep the path `/plannotator/session/<review_id>/` and take the origin of its Visibility: the service's own address, `https://ctas.deappspecialist.nl`, or the ngrok host. Any other Visibility SHALL be refused with HTTP 400 `visibility must be local, public or temporary`.
 
 #### Scenario: A temporary Review links through ngrok
 - **GIVEN** an open Review

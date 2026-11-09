@@ -34,7 +34,7 @@ export const SERVE_USAGE = [
   "Run the always-on review service on 127.0.0.1: one link per document under",
   "/plannotator/session/<review_id>/, the review API under /api/review/, and",
   "/plannotator/health. Two doors open when their port is set: the public door serves",
-  "only public Reviews to the VPS behind ctas.de-appspecialist.nl, the temporary door",
+  "only public Reviews to the VPS behind ctas.deappspecialist.nl, the temporary door",
   "only temporary Reviews to ngrok on this Mac. `plannotator service install` sets both",
   "ports; run by hand, serve opens no door. See docs/review-api.md.",
   "",

@@ -282,7 +282,7 @@ test("a door refuses a PR Review under the id worked out from its URL", async ()
 });
 
 test("door manifest allows only PR read queries and Review commands", () => {
-  const base = "https://ctas.de-appspecialist.nl/plannotator/session/0123456789abcdef/";
+  const base = "https://ctas.deappspecialist.nl/plannotator/session/0123456789abcdef/";
   for (const route of ["api/diff", "api/diff/fresh?snapshot=x", "api/pr-context", "api/pr-context/stream", "api/file-content?path=a.ts&oldPath=b.ts&snapshot=x", "api/review-image?path=a.png&side=new&snapshot=x"]) {
     expect(matchDoorRequest("GET", new URL(base + route))).not.toBeNull();
   }
