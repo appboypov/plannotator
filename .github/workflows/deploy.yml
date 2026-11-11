@@ -2,14 +2,8 @@ name: Deploy
 
 on:
   push:
-    branches:
-      - main
-    paths:
-      - 'apps/marketing/**'
-      - 'apps/portal/**'
-      - 'apps/paste-service/**'
-      - 'apps/waitlist-service/**'
-      - 'packages/**'
+    tags:
+      - 'v[0-9]+.[0-9]+.[0-9]+'
   workflow_dispatch:
     inputs:
       target:
@@ -28,9 +22,9 @@ permissions:
   contents: read
 
 jobs:
-  # Deploy remains automatic, but only after the exact commit has passed the
-  # repository's full Test workflow. The workflows start together on a main
-  # push; this job waits for Test instead of allowing deployment to race it.
+  # Deploy runs only after the exact commit has passed the repository's full
+  # Test workflow. A release tag points at a commit of main whose push started
+  # Test; this job waits for Test instead of racing it.
   verify:
     name: Require successful Test run
     runs-on: ubuntu-latest
@@ -106,71 +100,30 @@ jobs:
       paste: ${{ steps.changes.outputs.paste }}
       waitlist: ${{ steps.changes.outputs.waitlist }}
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
-        with:
-          persist-credentials: false
-
       - name: Check for changes
         id: changes
         env:
-          EVENT_NAME: ${{ github.event_name }}
-          TARGET: ${{ inputs.target }}
-          BEFORE_SHA: ${{ github.event.before }}
-          CURRENT_SHA: ${{ github.sha }}
+          TARGET: ${{ inputs.target || 'all' }}
         run: |
-          if [[ "$EVENT_NAME" == "workflow_dispatch" ]]; then
-            if [[ "$TARGET" == "all" || "$TARGET" == "marketing" ]]; then
-              echo "marketing=true" >> "$GITHUB_OUTPUT"
-            else
-              echo "marketing=false" >> "$GITHUB_OUTPUT"
-            fi
-            if [[ "$TARGET" == "all" || "$TARGET" == "portal" ]]; then
-              echo "portal=true" >> "$GITHUB_OUTPUT"
-            else
-              echo "portal=false" >> "$GITHUB_OUTPUT"
-            fi
-            if [[ "$TARGET" == "all" || "$TARGET" == "paste" ]]; then
-              echo "paste=true" >> "$GITHUB_OUTPUT"
-            else
-              echo "paste=false" >> "$GITHUB_OUTPUT"
-            fi
-            if [[ "$TARGET" == "all" || "$TARGET" == "waitlist" ]]; then
-              echo "waitlist=true" >> "$GITHUB_OUTPUT"
-            else
-              echo "waitlist=false" >> "$GITHUB_OUTPUT"
-            fi
+          if [[ "$TARGET" == "all" || "$TARGET" == "marketing" ]]; then
+            echo "marketing=true" >> "$GITHUB_OUTPUT"
           else
-            # For push events, check what changed
-            git fetch origin "$BEFORE_SHA" --depth=1 2>/dev/null || true
-
-            MARKETING_CHANGED=$(git diff --name-only "$BEFORE_SHA" "$CURRENT_SHA" 2>/dev/null | grep -E '^(apps/marketing/|packages/)' || true)
-            PORTAL_CHANGED=$(git diff --name-only "$BEFORE_SHA" "$CURRENT_SHA" 2>/dev/null | grep -E '^(apps/portal/|packages/)' || true)
-            PASTE_CHANGED=$(git diff --name-only "$BEFORE_SHA" "$CURRENT_SHA" 2>/dev/null | grep -E '^apps/paste-service/' || true)
-            WAITLIST_CHANGED=$(git diff --name-only "$BEFORE_SHA" "$CURRENT_SHA" 2>/dev/null | grep -E '^apps/waitlist-service/' || true)
-
-            if [[ -n "$MARKETING_CHANGED" ]]; then
-              echo "marketing=true" >> "$GITHUB_OUTPUT"
-            else
-              echo "marketing=false" >> "$GITHUB_OUTPUT"
-            fi
-
-            if [[ -n "$PORTAL_CHANGED" ]]; then
-              echo "portal=true" >> "$GITHUB_OUTPUT"
-            else
-              echo "portal=false" >> "$GITHUB_OUTPUT"
-            fi
-
-            if [[ -n "$PASTE_CHANGED" ]]; then
-              echo "paste=true" >> "$GITHUB_OUTPUT"
-            else
-              echo "paste=false" >> "$GITHUB_OUTPUT"
-            fi
-
-            if [[ -n "$WAITLIST_CHANGED" ]]; then
-              echo "waitlist=true" >> "$GITHUB_OUTPUT"
-            else
-              echo "waitlist=false" >> "$GITHUB_OUTPUT"
-            fi
+            echo "marketing=false" >> "$GITHUB_OUTPUT"
+          fi
+          if [[ "$TARGET" == "all" || "$TARGET" == "portal" ]]; then
+            echo "portal=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "portal=false" >> "$GITHUB_OUTPUT"
+          fi
+          if [[ "$TARGET" == "all" || "$TARGET" == "paste" ]]; then
+            echo "paste=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "paste=false" >> "$GITHUB_OUTPUT"
+          fi
+          if [[ "$TARGET" == "all" || "$TARGET" == "waitlist" ]]; then
+            echo "waitlist=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "waitlist=false" >> "$GITHUB_OUTPUT"
           fi
 
   deploy-marketing:
